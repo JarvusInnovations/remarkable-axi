@@ -1,6 +1,8 @@
 import { AxiError } from "axi-sdk-js";
 import type { Output } from "../output.js";
 import { client } from "../auth.js";
+import { listEntries } from "../entries.js";
+import { age } from "../time.js";
 import { bool, parseFlags, str, requirePositional } from "../flags.js";
 import {
   buildTree,
@@ -9,21 +11,6 @@ import {
   normalizePath,
   type Node,
 } from "../paths.js";
-
-/** Relative age of an ISO timestamp, e.g. `3d ago`. */
-function age(iso: string): string {
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return "unknown";
-  const seconds = Math.floor((Date.now() - then) / 1000);
-  if (seconds < 60) return "just now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 365) return `${days}d ago`;
-  return `${Math.floor(days / 365)}y ago`;
-}
 
 function kind(node: Node): string {
   if (node.entry.type === "CollectionType") return "folder";
@@ -43,7 +30,7 @@ export async function ls(args: string[]): Promise<Output> {
   const parsed = parseFlags("ls", args, { boolean: ["--all"] });
   const path = normalizePath(parsed.positional[0] ?? "/");
   const api = await client();
-  const tree = buildTree(await api.listItems());
+  const tree = buildTree((await listEntries(api)).entries);
 
   if (bool(parsed, "--all")) {
     const all = [...tree.byId.values()]
@@ -142,7 +129,7 @@ export async function find(args: string[]): Promise<Output> {
   }
 
   const api = await client();
-  const tree = buildTree(await api.listItems());
+  const tree = buildTree((await listEntries(api)).entries);
 
   const hits = [...tree.byId.values()]
     .filter((n) => {
@@ -173,9 +160,15 @@ export async function find(args: string[]): Promise<Output> {
       path: n.path,
       modified: age(n.entry.lastModified),
     })),
-    help:
-      hits.length > shown.length
-        ? [`Run \`remarkable-axi find "${pattern}" --limit ${hits.length}\` for all matches`]
-        : undefined,
+    // Spread rather than assigning undefined — an undefined value serializes
+    // as an explicit `help: null`, which reads as "there is no help here"
+    // instead of the key simply not applying.
+    ...(hits.length > shown.length
+      ? {
+          help: [
+            `Run \`remarkable-axi find "${pattern}" --limit ${hits.length}\` for all matches`,
+          ],
+        }
+      : {}),
   };
 }

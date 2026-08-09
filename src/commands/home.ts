@@ -2,23 +2,12 @@ import type { Output } from "../output.js";
 import { collapseHome } from "../output.js";
 import { readToken, tokenPath } from "../auth.js";
 import { client } from "../auth.js";
+import { listEntries } from "../entries.js";
+import { age, recencyKey } from "../time.js";
 import { buildTree, type Node } from "../paths.js";
 
 const CONNECT_URL = "https://my.remarkable.com/device/desktop/connect";
 const RECENT_LIMIT = 8;
-
-function age(iso: string): string {
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return "unknown";
-  const seconds = Math.floor((Date.now() - then) / 1000);
-  if (seconds < 60) return "just now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return days < 365 ? `${days}d ago` : `${Math.floor(days / 365)}y ago`;
-}
 
 /**
  * The no-argument view, which also serves as the SessionStart hook payload.
@@ -44,7 +33,7 @@ export async function home(): Promise<Output> {
   let nodes: Node[];
   try {
     const api = await client();
-    nodes = [...buildTree(await api.listItems()).byId.values()];
+    nodes = [...buildTree((await listEntries(api)).entries).byId.values()];
   } catch (error) {
     // The hook must never break a session start, so an unreachable cloud
     // degrades to a status line rather than an error.
@@ -69,11 +58,7 @@ export async function home(): Promise<Output> {
   }
 
   const recent = [...documents]
-    .sort(
-      (a, b) =>
-        new Date(b.entry.lastModified).getTime() -
-        new Date(a.entry.lastModified).getTime(),
-    )
+    .sort((a, b) => recencyKey(b.entry.lastModified) - recencyKey(a.entry.lastModified))
     .slice(0, RECENT_LIMIT);
 
   return {

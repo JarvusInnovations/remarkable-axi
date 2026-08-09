@@ -41,6 +41,36 @@ jobs:
       # `crc-32/crc32c` extensionless and crc-32 ships no exports map, so an
       # unbundled build fails to load at all. Catch that here, not on a user's
       # machine.
+      #
+      # `--version` alone is not enough — it never reaches the cloud client,
+      # so it stays green through failures in exactly the code that matters.
+      # Running a real command with no credentials exercises dispatch, the
+      # cloud client, and the error path, and must produce a structured error
+      # rather than a crash or a stack trace.
       run: |
         node dist/bin/remarkable-axi.js --version
         node dist/bin/remarkable-axi.js --help > /dev/null
+
+        set +e
+        out=$(node dist/bin/remarkable-axi.js ls / 2>&1)
+        code=$?
+        set -e
+        echo "$out"
+
+        if [ "$code" -ne 1 ]; then
+          echo "::error::expected exit 1 without credentials, got $code"
+          exit 1
+        fi
+        if ! echo "$out" | grep -q 'code: NOT_AUTHENTICATED'; then
+          echo "::error::expected a structured NOT_AUTHENTICATED error"
+          exit 1
+        fi
+
+        # A leaked stack trace means an unhandled failure reached stdout, where
+        # an agent would try to read it as data.
+        if echo "$out" | grep -qE '^\s+at |node:internal'; then
+          echo "::error::a raw stack trace leaked to stdout"
+          exit 1
+        fi
+
+        echo "smoke test passed"
