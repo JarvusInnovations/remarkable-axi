@@ -1,0 +1,57 @@
+{
+  "name": "remarkable-axi",
+  "type": "module",
+  "devDependencies": {
+    "@mozilla/readability": "^0.6.0",
+    "@toon-format/toon": "^2.1.0",
+    "@types/jsdom": "^30.0.0",
+    "@types/node": "^26.2.0",
+    "axi-sdk-js": "^0.1.10",
+    "esbuild": "^0.28.1",
+    "fast-xml-parser": "^5.10.1",
+    "fflate": "^0.8.3",
+    "rmapi-js": "^12.0.0",
+    "vitest": "^4.1.10"
+  },
+  "dependencies": {
+    "jsdom": "^30.0.1"
+  },
+  "version": "0.1.0",
+  "description": "Send articles and documents to a reMarkable tablet and manage its cloud files — an agent-ergonomic CLI",
+  "license": "MIT",
+  "bin": {
+    "remarkable-axi": "dist/bin/remarkable-axi.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "bun scripts/build.ts",
+    "check": "tsc --noEmit",
+    "prepublishOnly": "bun scripts/build.ts",
+    "test": "vitest run",
+    "dev": "bun bin/remarkable-axi.ts",
+    "test:watch": "vitest"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "remarkable",
+    "e-ink",
+    "epub",
+    "cli",
+    "agent",
+    "axi",
+    "toon"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JarvusInnovations/remarkable-axi.git"
+  }
+}
