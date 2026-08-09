@@ -10,25 +10,21 @@
  * file instead of installing the whole dependency tree.
  */
 import { build } from "esbuild";
-import { readFile, writeFile, chmod, rm } from "node:fs/promises";
-import { execSync } from "node:child_process";
+import { readFile, chmod, rm } from "node:fs/promises";
 
 const OUT = "dist/bin/remarkable-axi.js";
 
+/**
+ * The published version is exactly `package.json`'s, matching the bare string
+ * the other *-axi tools print. The release workflow rewrites that field from
+ * the release tag before building, so no `git describe` is involved — which
+ * also keeps the build independent of checkout depth in CI.
+ */
 async function resolveVersion(): Promise<string> {
   const pkg = JSON.parse(await readFile("package.json", "utf8")) as {
     version: string;
   };
-
-  try {
-    const described = execSync("git describe --tags --always --dirty", {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-    return described ? `${pkg.version} (${described})` : pkg.version;
-  } catch {
-    return pkg.version;
-  }
+  return pkg.version;
 }
 
 const version = await resolveVersion();
@@ -70,11 +66,8 @@ if (bytes < 50_000) {
   process.exit(1);
 }
 
-await writeFile(
-  "dist/.build-info.json",
-  `${JSON.stringify({ version, bytes, modules: inputs }, null, 2)}\n`,
-);
-
+// Build metadata is reported here rather than written into dist/, which the
+// package `files` entry ships verbatim — it has no business in the tarball.
 console.error(
   `built ${OUT} — ${(bytes / 1024).toFixed(0)}KB from ${inputs} modules, version ${version}`,
 );
