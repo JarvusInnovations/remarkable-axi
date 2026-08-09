@@ -5,6 +5,7 @@ import { register } from "rmapi-js";
 import { client, readToken, tokenPath, writeToken } from "../auth.js";
 import { parseFlags, requirePositional } from "../flags.js";
 import { buildTree } from "../paths.js";
+import { listEntries } from "../entries.js";
 
 
 const CONNECT_URL = "https://my.remarkable.com/device/desktop/connect";
@@ -78,7 +79,7 @@ export async function doctor(args: string[]): Promise<Output> {
   const started = Date.now();
   try {
     const api = await client();
-    const entries = await api.listItems();
+    const { entries, unreadable } = await listEntries(api);
     const tree = buildTree(entries);
     const documents = [...tree.byId.values()].filter(
       (n) => n.entry.type === "DocumentType",
@@ -97,6 +98,9 @@ export async function doctor(args: string[]): Promise<Output> {
         latency: `${Date.now() - started}ms`,
         documents,
         folders,
+        // Surfaced rather than hidden: a listing that quietly drops items
+        // reads as complete when it isn't.
+        ...(unreadable > 0 ? { unreadable } : {}),
       },
     };
   } catch (error) {

@@ -3,6 +3,7 @@ import { readFile, stat } from "node:fs/promises";
 import { AxiError } from "axi-sdk-js";
 import type { Output } from "../output.js";
 import { client } from "../auth.js";
+import { listEntries } from "../entries.js";
 import { parseFlags, str, requirePositional } from "../flags.js";
 import { buildTree, mkdirp, normalizePath } from "../paths.js";
 import { articleToEpub, documentName } from "../article.js";
@@ -37,7 +38,7 @@ export async function send(args: string[]): Promise<Output> {
   const { name, buffer, article } = await articleToEpub(url, titleOverride);
 
   const api = await client();
-  const tree = buildTree(await api.listItems());
+  const tree = buildTree((await listEntries(api)).entries);
   const { id: parent, created } = await mkdirp(api, tree, dir);
 
   await api.putEpub(name, buffer, {
@@ -111,7 +112,7 @@ export async function put(args: string[]): Promise<Output> {
   );
 
   const api = await client();
-  const tree = buildTree(await api.listItems());
+  const tree = buildTree((await listEntries(api)).entries);
   const { id: parent, created } = await mkdirp(api, tree, dir);
 
   if (ext === ".pdf") {

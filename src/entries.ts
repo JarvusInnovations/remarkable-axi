@@ -1,0 +1,155 @@
+import type { Entry, RemarkableApi, ItemRef } from "rmapi-js";
+
+/**
+ * Result of a listing, including anything that could not be read.
+ *
+ * Dropped entries are counted rather than swallowed: a caller that reports a
+ * list as complete when it silently isn't sends the agent off on wrong data.
+ */
+export interface Listing {
+  entries: Entry[];
+  /** Items whose metadata could not be read at all. */
+  unreadable: number;
+}
+
+interface LenientMetadata {
+  visibleName?: unknown;
+  lastModified?: unknown;
+  lastOpened?: unknown;
+  parent?: unknown;
+  pinned?: unknown;
+  createdTime?: unknown;
+  source?: unknown;
+  new?: unknown;
+}
+
+function str(value: unknown, fallback = ""): string {
+  return typeof value === "string" ? value : fallback;
+}
+
+/**
+ * Read an item's metadata without the library's strict schema.
+ *
+ * `raw.getMetadata` validates against a schema that requires `lastModified`,
+ * but real accounts contain items written by other tools that omit it — a
+ * single such item rejects `listItems()` for the entire account, because it
+ * fans out with `Promise.all`. Parsing the same JSON ourselves keeps one odd
+ * folder from hiding everything else.
+ */
+async function readMetadata(
+  api: RemarkableApi,
+  metaEnt: ItemRef,
+): Promise<LenientMetadata> {
+  const text = await api.raw.getText(metaEnt);
+  const parsed: unknown = JSON.parse(text);
+  if (typeof parsed !== "object" || parsed === null) {
+    throw new Error("metadata is not an object");
+  }
+  return parsed as LenientMetadata;
+}
+
+/** Read an item's content, tolerating a shape the schema rejects. */
+async function readContent(
+  api: RemarkableApi,
+  contentEnt: ItemRef | undefined,
+): Promise<{ fileType?: string; tags?: unknown; templateVersion?: unknown }> {
+  // Collections often have no content file at all — content only carries tags.
+  if (!contentEnt) return {};
+  try {
+    return (await api.raw.getContent(contentEnt)) as {
+      fileType?: string;
+      tags?: unknown;
+    };
+  } catch {
+    try {
+      const parsed: unknown = JSON.parse(await api.raw.getText(contentEnt));
+      return typeof parsed === "object" && parsed !== null
+        ? (parsed as { fileType?: string; tags?: unknown })
+        : {};
+    } catch {
+      // Treat unreadable content as a collection rather than losing the item;
+      // a folder that lists is far more useful than an entry that vanishes.
+      return {};
+    }
+  }
+}
+
+/** Build one entry, mirroring the shape the library produces. */
+async function convertEntry(
+  api: RemarkableApi,
+  { id, hash }: ItemRef,
+): Promise<Entry | null> {
+  const { entries } = await api.raw.getEntries({
+    id: `${id}.docSchema`,
+    hash,
+  });
+
+  const metaEnt = entries.find((e) => e.id.endsWith(".metadata"));
+  const contentEnt = entries.find((e) => e.id.endsWith(".content"));
+  if (!metaEnt) return null;
+
+  const [meta, content] = await Promise.all([
+    readMetadata(api, metaEnt),
+    readContent(api, contentEnt),
+  ]);
+
+  const common = {
+    id,
+    hash,
+    visibleName: str(meta.visibleName, "(unnamed)"),
+    // Absent on items written by some third-party tools. Callers render this
+    // as an unknown age rather than failing.
+    lastModified: str(meta.lastModified),
+    pinned: meta.pinned === true,
+    parent: str(meta.parent),
+  };
+
+  if (content.templateVersion !== undefined) {
+    return {
+      ...common,
+      type: "TemplateType",
+      new: meta.new === true,
+      source: str(meta.source),
+      createdTime: str(meta.createdTime),
+    } as Entry;
+  }
+
+  if (content.fileType === undefined) {
+    return { ...common, type: "CollectionType", tags: content.tags } as Entry;
+  }
+
+  return {
+    ...common,
+    type: "DocumentType",
+    fileType: content.fileType,
+    lastOpened: str(meta.lastOpened),
+    tags: content.tags,
+  } as Entry;
+}
+
+/**
+ * List every item in the account.
+ *
+ * Stands in for `api.listItems()`, which is all-or-nothing: it validates each
+ * item against a strict schema inside a `Promise.all`, so one malformed entry
+ * throws away the whole listing. Here a bad item is dropped and counted.
+ */
+export async function listEntries(api: RemarkableApi): Promise<Listing> {
+  const ids = await api.listIds();
+  const settled = await Promise.allSettled(
+    ids.map((ref) => convertEntry(api, ref)),
+  );
+
+  const entries: Entry[] = [];
+  let unreadable = 0;
+
+  for (const result of settled) {
+    if (result.status === "fulfilled" && result.value) {
+      entries.push(result.value);
+    } else {
+      unreadable++;
+    }
+  }
+
+  return { entries, unreadable };
+}
