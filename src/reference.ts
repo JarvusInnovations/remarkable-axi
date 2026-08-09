@@ -1,0 +1,176 @@
+export const DESCRIPTION =
+  "Send articles and documents to a reMarkable tablet and manage its cloud files";
+
+export interface CommandDoc {
+  usage: string;
+  summary: string;
+  flags?: string[];
+  examples?: string[];
+}
+
+export interface CommandGroup {
+  group: string;
+  commands: CommandDoc[];
+}
+
+/**
+ * The one place command surface is described. The home view's help lines,
+ * every `--help` block, and the generated SKILL.md region all derive from
+ * this, so documentation cannot drift from the implementation.
+ */
+export const COMMAND_GROUPS: CommandGroup[] = [
+  {
+    group: "Send",
+    commands: [
+      {
+        usage: "send <url> [--dir <path>] [--title <title>]",
+        summary:
+          "Fetch a web article, convert it to EPUB, and upload it to the tablet",
+        flags: [
+          "--dir <path>    destination folder, created if missing (default: /)",
+          "--title <title> override the extracted article title",
+        ],
+        examples: [
+          'remarkable-axi send "https://example.com/post" --dir /Articles',
+          'remarkable-axi send "https://example.com/post" --title "Weekend Reading"',
+        ],
+      },
+      {
+        usage: "put <file> [<dir>]",
+        summary: "Upload a local PDF or EPUB, creating the folder if missing",
+        flags: ["--name <name>  document name shown on the device"],
+        examples: [
+          "remarkable-axi put ~/Downloads/paper.pdf /Papers",
+          'remarkable-axi put book.epub /Books --name "Field Notes"',
+        ],
+      },
+    ],
+  },
+  {
+    group: "Browse",
+    commands: [
+      {
+        usage: "ls [<path>]",
+        summary: "List the contents of a folder (default: /)",
+        flags: ["--all  list every document in the account, recursively"],
+        examples: ["remarkable-axi ls", "remarkable-axi ls /Articles"],
+      },
+      {
+        usage: "find <pattern>",
+        summary: "Search every document and folder name by substring or regex",
+        flags: [
+          "--type <doc|folder>  restrict results to one entry type",
+          "--limit <n>          maximum results to return (default: 50)",
+        ],
+        examples: [
+          'remarkable-axi find "transit"',
+          'remarkable-axi find "^Chapter" --type doc',
+        ],
+      },
+    ],
+  },
+  {
+    group: "Organize",
+    commands: [
+      {
+        usage: "mkdir <path>",
+        summary: "Create a folder and every missing parent (idempotent)",
+        examples: ["remarkable-axi mkdir /Studies/Physics/Term1"],
+      },
+      {
+        usage: "mv <path> <dest-dir>",
+        summary: "Move a document or folder into another folder",
+        examples: ["remarkable-axi mv /Inbox/paper.pdf /Papers"],
+      },
+      {
+        usage: "rm <path>",
+        summary: "Move a document or folder to the trash",
+        flags: ["--force  required to remove a folder that still has children"],
+        examples: ["remarkable-axi rm /Articles/Old Post"],
+      },
+    ],
+  },
+  {
+    group: "Setup",
+    commands: [
+      {
+        usage: "login <code>",
+        summary:
+          "Pair this machine using an 8-character code from my.remarkable.com",
+        examples: ["remarkable-axi login abcdefgh"],
+      },
+      {
+        usage: "doctor",
+        summary: "Check pairing, connectivity, and account reachability",
+        examples: ["remarkable-axi doctor"],
+      },
+      {
+        usage: "setup hooks",
+        summary:
+          "Install SessionStart hooks so agents see tablet state automatically",
+        examples: ["remarkable-axi setup hooks"],
+      },
+    ],
+  },
+];
+
+/** Flat lookup of a command's documentation by its first word. */
+export function commandDoc(name: string): CommandDoc | undefined {
+  for (const group of COMMAND_GROUPS) {
+    for (const doc of group.commands) {
+      const first = doc.usage.split(" ")[0];
+      if (first === name) return doc;
+      // `setup hooks` is documented as a two-word usage.
+      if (doc.usage.startsWith(`${name} `) && first === name) return doc;
+    }
+  }
+  return undefined;
+}
+
+/** Render the `--help` block for a single command. */
+export function renderCommandHelp(name: string): string | null {
+  const doc = commandDoc(name);
+  if (!doc) return null;
+
+  const lines = [`usage: remarkable-axi ${doc.usage}`, "", doc.summary];
+
+  if (doc.flags?.length) {
+    lines.push("", "flags:");
+    for (const flag of doc.flags) lines.push(`  ${flag}`);
+  }
+
+  if (doc.examples?.length) {
+    lines.push("", "examples:");
+    for (const example of doc.examples) lines.push(`  ${example}`);
+  }
+
+  // The SDK writes this string verbatim, so the trailing newline is ours.
+  return `${lines.join("\n")}\n`;
+}
+
+/** Render the top-level help listing every command by group. */
+export function renderTopLevelHelp(): string {
+  const lines = [
+    `remarkable-axi — ${DESCRIPTION}`,
+    "",
+    "usage: remarkable-axi <command> [args] [flags]",
+  ];
+
+  for (const group of COMMAND_GROUPS) {
+    lines.push("", `${group.group}:`);
+    const width = Math.max(
+      ...group.commands.map((c) => c.usage.length),
+    );
+    for (const doc of group.commands) {
+      lines.push(`  ${doc.usage.padEnd(width)}  ${doc.summary}`);
+    }
+  }
+
+  lines.push(
+    "",
+    "Run `remarkable-axi <command> --help` for usage on any command.",
+    "Run `remarkable-axi` with no arguments to see current tablet state.",
+  );
+
+  return lines.join("\n");
+}
