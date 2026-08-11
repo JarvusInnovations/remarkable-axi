@@ -219,6 +219,7 @@ export function renderTopLevelHelp(): string {
 
   lines.push(
     "",
+    "Every cloud call times out after 120s; set REMARKABLE_TIMEOUT=<seconds> to change it (0 waits indefinitely).",
     "Run `remarkable-axi <command> --help` for usage on any command.",
     "Run `remarkable-axi` with no arguments to see current tablet state.",
   );

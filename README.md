@@ -81,6 +81,10 @@ Run `remarkable-axi <command> --help` for flags and examples.
 every session already knowing what's on the tablet, with no invocation needed.
 Claude Code and Codex get native hooks; OpenCode gets a managed plugin.
 
+Every cloud call has a 120s deadline, so a stalled request fails with a
+structured `TIMEOUT` naming the operation instead of hanging silently. Set
+`REMARKABLE_TIMEOUT=<seconds>` to change it, or `0` to wait indefinitely.
+
 Output is [TOON](https://toonformat.dev), which is roughly 40% cheaper in
 tokens than the equivalent JSON. Errors are structured on stdout so an agent
 can read and act on them, and exit codes follow the AXI convention: `0` success
@@ -129,10 +133,13 @@ can read and act on them, and exit codes follow the AXI convention: `0` success
   per-page offset. Note this is unrelated to the reported `paperSize`, which
   for PDF-backed documents is a canonical 1404x1872 the ink freely exceeds —
   deriving the scale from it, as an earlier version did, places ink off-page.
-  Two limits remain: the calibration page shared the screen's 3:4 aspect, so
-  the fit rule for Letter and A4 is inferred rather than measured, and only one
-  device has been calibrated. Both surface as ink outside the page box, which
-  `--overlay` counts and reports rather than clipping.
+  A second calibration at US Letter gave the *same* scale, which is what rules
+  out a fit-to-screen model: the page is rendered at its natural physical size
+  at ~227dpi and panned around, so the scale is a constant and the page box
+  follows from the page's own dimensions. Because that is a rendering density
+  rather than a screen property it should hold across devices, though only one
+  has been calibrated. Ink drawn past the page edge is real — the device allows
+  it — so `--overlay` counts and reports it rather than clipping.
 
 ## Development
 
