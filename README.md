@@ -60,6 +60,7 @@ Verify with `remarkable-axi doctor`.
 | --- | --- |
 | `send <url> [--dir <path>] [--title <t>]` | Fetch a web article, convert to EPUB, upload |
 | `put <file> [<dir>]` | Upload a local PDF or EPUB |
+| `replace <path> <file>` | Swap a document's contents, leaving exactly one at the path |
 | `fetch <path> [--as pdf\|svg\|text]` | Render handwriting to PDF/SVG, or extract typed text |
 | `ls [<path>]` | List a folder's contents (`--all` for every document) |
 | `find <pattern>` | Search names by substring or regex |
@@ -97,6 +98,13 @@ can read and act on them, and exit codes follow the AXI convention: `0` success
 - **Deleting a folder does not delete its contents.** The API moves only the
   folder to the trash, stranding its children. `rm` refuses a non-empty folder
   unless you pass `--force`, and tells you how many items are affected.
+- **There is no in-place content update, so `replace` is a verified composite.**
+  `updateDocument` only patches metadata and `putDocumentArchive` — the one call
+  that can keep a document's id — takes a full archive and is experimental. So
+  `replace` uploads first (a failed upload leaves the original intact), removes
+  the superseded entry by **id** rather than by path, and then verifies exactly
+  one document remains. It refuses outright when a path is already ambiguous
+  rather than picking a victim.
 - **Uploads are PDF and EPUB only** — that is the cloud's limit, not this
   tool's. Use `send` to turn a web page into an EPUB.
 - **Handwriting renders to vector PDF and SVG.** `fetch` reads the device's

@@ -36,6 +36,19 @@ export const COMMAND_GROUPS: CommandGroup[] = [
         ],
       },
       {
+        usage: "replace <path> <file>",
+        summary:
+          "Swap a document's contents in one step, leaving exactly one at the path",
+        flags: [
+          "--name <name>  rename while replacing",
+          "--keep-old     upload the new copy but leave the old entry in place",
+        ],
+        examples: [
+          "remarkable-axi replace /Papers/Draft.pdf ./draft-v2.pdf",
+          'remarkable-axi replace "/Calibration/Calibration rM2" ./cal.pdf',
+        ],
+      },
+      {
         usage: "put <file> [<dir>]",
         summary: "Upload a local PDF or EPUB, creating the folder if missing",
         flags: ["--name <name>  document name shown on the device"],

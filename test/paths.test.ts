@@ -120,6 +120,16 @@ describe("buildTree", () => {
     expect(lookup(tree, "/Notes")?.entry.id).toBe("d1");
   });
 
+  test("keeps every duplicate reachable by id even though lookup picks one", () => {
+    // `replace` depends on this: a path lookup can only return one entry, so
+    // finding *all* entries at a path has to go through the id index. Without
+    // it, replacing one of two same-named siblings is a coin flip.
+    const tree = buildTree([doc("d1", "Notes"), doc("d2", "Notes")]);
+    expect(lookup(tree, "/Notes")?.entry.id).toBe("d1");
+    const atPath = [...tree.byId.values()].filter((n) => n.path === "/Notes");
+    expect(atPath.map((n) => n.entry.id).sort()).toEqual(["d1", "d2"]);
+  });
+
   test("root lookup is always null", () => {
     const tree = buildTree([folder("f1", "Books")]);
     expect(lookup(tree, "/")).toBeNull();
