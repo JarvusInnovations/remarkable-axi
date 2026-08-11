@@ -4,10 +4,36 @@ import { readToken, tokenPath } from "../auth.js";
 import { client } from "../auth.js";
 import { listEntries } from "../entries.js";
 import { age, recencyKey } from "../time.js";
+import { readConfig } from "../config.js";
+import { spec } from "../devices.js";
 import { buildTree, type Node } from "../paths.js";
 
 const CONNECT_URL = "https://my.remarkable.com/device/desktop/connect";
 const RECENT_LIMIT = 8;
+
+/**
+ * The target device block, when one is set.
+ *
+ * This rides in the every-session payload because it is what a caller needs
+ * *before* generating anything for the tablet — chiefly `pagePt`, since sizing
+ * a page to the panel's pixels produces something several times too large.
+ * Absent a target it is omitted rather than guessed at.
+ */
+async function targetBlock(): Promise<Record<string, unknown>> {
+  const { targetDevice } = await readConfig();
+  if (!targetDevice) return {};
+
+  const s = spec(targetDevice);
+  return {
+    target: {
+      name: s.name,
+      model: s.model,
+      screen: s.screen,
+      dpi: s.dpi,
+      pagePt: s.pagePt,
+    },
+  };
+}
 
 /**
  * The no-argument view, which also serves as the SessionStart hook payload.
@@ -22,6 +48,7 @@ export async function home(): Promise<Output> {
   if (!token) {
     return {
       status: "not paired",
+      ...(await targetBlock()),
       token: `not found at ${collapseHome(tokenPath)}`,
       help: [
         `Get an 8-character code from ${CONNECT_URL}`,
@@ -50,6 +77,7 @@ export async function home(): Promise<Output> {
   if (documents.length === 0) {
     return {
       status: `paired, 0 documents, ${folders.length} folders`,
+      ...(await targetBlock()),
       help: [
         "Run `remarkable-axi send <url> --dir /Articles` to send a web article",
         "Run `remarkable-axi put <file> <dir>` to upload a PDF or EPUB",
@@ -63,6 +91,7 @@ export async function home(): Promise<Output> {
 
   return {
     status: `paired, ${documents.length} documents, ${folders.length} folders`,
+    ...(await targetBlock()),
     recent: recent.map((n) => ({
       type: n.entry.type === "DocumentType" ? n.entry.fileType : "folder",
       path: n.path,

@@ -7,6 +7,7 @@ import {
 } from "./reference.js";
 import { home } from "./commands/home.js";
 import { ls, find } from "./commands/browse.js";
+import { devices } from "./commands/devices.js";
 import { send, put } from "./commands/send.js";
 import { mkdir, mv, rm } from "./commands/organize.js";
 import { login, doctor, setup } from "./commands/setup.js";
@@ -42,6 +43,7 @@ export async function main(argv: string[] = process.argv.slice(2)) {
     commands: {
       ls,
       find,
+      devices,
       send,
       put,
       mkdir,

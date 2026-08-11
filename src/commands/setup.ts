@@ -6,6 +6,7 @@ import { client, readToken, tokenPath, writeToken } from "../auth.js";
 import { parseFlags, requirePositional } from "../flags.js";
 import { buildTree } from "../paths.js";
 import { listEntries } from "../entries.js";
+import { setupDevice } from "./devices.js";
 
 
 const CONNECT_URL = "https://my.remarkable.com/device/desktop/connect";
@@ -125,11 +126,17 @@ export async function doctor(args: string[]): Promise<Output> {
 
 export async function setup(args: string[]): Promise<Output> {
   const sub = args[0];
+
+  if (sub === "device") return setupDevice(args.slice(1));
+
   if (sub !== "hooks") {
     throw new AxiError(
       sub ? `unknown setup command: ${sub}` : "setup needs a subcommand",
       "USAGE",
-      ["Run `remarkable-axi setup hooks` to install SessionStart hooks"],
+      [
+        "Run `remarkable-axi setup hooks` to install SessionStart hooks",
+        "Run `remarkable-axi setup device <model>` to set the device to design for",
+      ],
     );
   }
 
