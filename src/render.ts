@@ -212,40 +212,36 @@ export async function pagesToPdf(
 }
 
 /**
- * Width, in ink units, that a PDF page is fitted to on screen.
+ * Ink units per PDF point.
  *
- * Measured, not assumed. A calibration document with printed targets at known
- * page coordinates was annotated on the device and solved by least squares:
- * the page lands on ink x [-803, 803] and y [0, 2141] with residuals under
- * 0.4 units, and the two calibration pages agreed to within 0.36 units, so
- * there is no per-page offset. Note this is unrelated to the page's reported
- * `paperSize`, which for PDF-backed documents is a canonical 1404x1872 that
- * the ink coordinates freely exceed.
+ * Measured, not assumed, and it is the whole trick: a PDF page is *not* fitted
+ * to the screen. The device rasterizes it at its natural physical size at
+ * ~227dpi and lets you pan around it, so the scale is a constant and the page
+ * box follows from the page's own dimensions.
  *
- * Two limits are known and deliberately not papered over. The calibration page
- * shared the screen's 3:4 aspect, which makes fit-to-width and fit-to-height
- * the same transform -- so the fitting rule for other aspects (Letter, A4) is
- * inferred, not measured. And it was written on one device; whether this
- * constant is device-independent is untested. Both show up as ink falling
- * outside the page box, which `overlayOnPdf` counts and reports rather than
- * clipping away.
+ * Two calibration documents with printed targets at known page coordinates
+ * were annotated on the device and solved by least squares. A 509x679pt page
+ * and a 612x792pt page gave the same scale -- 3.1535/3.1524 and 3.1526/3.1547
+ * ink per point -- which is what rules out a fit-to-screen model: fitting would
+ * have produced different scales for different page widths. Residuals stayed
+ * under 0.6 ink units and the pages agreed with each other, so there is no
+ * per-page offset.
+ *
+ * 3.1526 x 72 = 226.99, hence the dpi. Because this is a rendering density
+ * rather than a screen property, it is expected to hold across devices,
+ * though only one has been calibrated so far.
  */
-const INK_PAGE_WIDTH = 1606;
+const INK_DPI = 227;
+const INK_PER_POINT = INK_DPI / 72;
 
 /**
  * Map a PDF page box into ink coordinates.
  *
- * The page is fitted to width and anchored at the top, with x centred on zero,
- * so a page's ink box is a pure function of its aspect ratio.
+ * x is centred on zero and y runs downward from the page's top edge.
  */
 export function pageInkBox(pageW: number, pageH: number): Frame {
-  const scale = INK_PAGE_WIDTH / pageW;
-  return {
-    x: -INK_PAGE_WIDTH / 2,
-    y: 0,
-    width: INK_PAGE_WIDTH,
-    height: pageH * scale,
-  };
+  const width = pageW * INK_PER_POINT;
+  return { x: -width / 2, y: 0, width, height: pageH * INK_PER_POINT };
 }
 
 /**
@@ -271,7 +267,7 @@ export async function overlayOnPdf(
     const pw = page.getWidth();
     const ph = page.getHeight();
     const box = pageInkBox(pw, ph);
-    const scale = pw / box.width;
+    const scale = 1 / INK_PER_POINT;
 
     // Ink drawn outside the page box is real -- the device lets you write past
     // the sheet -- so it is counted and still drawn rather than clipped away.
