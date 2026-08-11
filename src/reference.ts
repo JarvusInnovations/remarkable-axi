@@ -76,6 +76,29 @@ export const COMMAND_GROUPS: CommandGroup[] = [
     ],
   },
   {
+    group: "Read",
+    commands: [
+      {
+        usage: "fetch <path> [--as pdf|svg|text] [--pages 1-3,5] [--fit content|page]",
+        summary:
+          "Render a notebook's handwriting to PDF or SVG, or extract its typed text",
+        flags: [
+          "--as <fmt>      pdf (default, all pages), svg (one page), or text",
+          "--pages <spec>  page numbers and ranges, e.g. 1,3,7-9 (default: all)",
+          "--fit <mode>    page (default) keeps the sheet; content crops to the ink",
+          "--out <path>    where to write (default: ./<name>.<ext>)",
+          "--overlay       for annotated PDFs, draw ink over the original (placement approximate)",
+        ],
+        examples: [
+          'remarkable-axi fetch "/Quick sheets" --as pdf',
+          'remarkable-axi fetch "/Meeting Notes/Weekly" --as svg --pages 2 --fit content',
+          'remarkable-axi fetch "/Papers/Draft.pdf" --as pdf',
+          'remarkable-axi fetch "/Quick sheets" --as text',
+        ],
+      },
+    ],
+  },
+  {
     group: "Organize",
     commands: [
       {

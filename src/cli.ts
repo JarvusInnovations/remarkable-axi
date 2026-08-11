@@ -8,6 +8,7 @@ import {
 import { home } from "./commands/home.js";
 import { ls, find } from "./commands/browse.js";
 import { devices } from "./commands/devices.js";
+import { fetch as fetchCmd } from "./commands/fetch.js";
 import { send, put } from "./commands/send.js";
 import { mkdir, mv, rm } from "./commands/organize.js";
 import { login, doctor, setup } from "./commands/setup.js";
@@ -44,6 +45,7 @@ export async function main(argv: string[] = process.argv.slice(2)) {
       ls,
       find,
       devices,
+      fetch: fetchCmd,
       send,
       put,
       mkdir,

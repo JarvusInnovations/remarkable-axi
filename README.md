@@ -60,6 +60,7 @@ Verify with `remarkable-axi doctor`.
 | --- | --- |
 | `send <url> [--dir <path>] [--title <t>]` | Fetch a web article, convert to EPUB, upload |
 | `put <file> [<dir>]` | Upload a local PDF or EPUB |
+| `fetch <path> [--as pdf\|svg\|text]` | Render handwriting to PDF/SVG, or extract typed text |
 | `ls [<path>]` | List a folder's contents (`--all` for every document) |
 | `find <pattern>` | Search names by substring or regex |
 | `mkdir <path>` | Create a folder and every missing parent |
@@ -67,6 +68,8 @@ Verify with `remarkable-axi doctor`.
 | `rm <path>` | Move a document or folder to the trash |
 | `login <code>` | Pair this machine |
 | `doctor` | Check pairing, connectivity, and reachability |
+| `devices` | List reMarkable models with screen specs and PDF page sizes |
+| `setup device <model>` | Set the device to design for; its specs appear every session |
 | `setup hooks` | Install SessionStart hooks for Claude Code, Codex, OpenCode |
 
 Run `remarkable-axi <command> --help` for flags and examples.
@@ -96,10 +99,23 @@ can read and act on them, and exit codes follow the AXI convention: `0` success
   unless you pass `--force`, and tells you how many items are affected.
 - **Uploads are PDF and EPUB only** — that is the cloud's limit, not this
   tool's. Use `send` to turn a web page into an EPUB.
-- **Fetching handwritten notes is not implemented.** Rendering reMarkable
-  `.rm` stroke files has no JavaScript implementation; the only maintained
-  renderer is the Python `rmc`. Pulling annotated PDFs is tractable and is the
-  obvious next addition.
+- **Handwriting renders to vector PDF and SVG.** `fetch` reads the device's
+  stroke files directly and emits paths, so output is vector and an agent can
+  read the PDF for vision without a rasterizer. Extended pages are handled:
+  a single page can run several sheet-heights deep, so the output frame follows
+  the ink rather than the nominal sheet size.
+- **Colour is exact where the device records it, and never guessed.**
+  Highlighter and shader strokes carry a packed RGBA and come out exact. Other
+  pens store only a palette index, and the device ships no mapping for the
+  colour indices — where a document uses one colour for both a highlighter and
+  a pen, that index is learned from the document itself. Anything still unknown
+  draws black and is reported as `unmappedColorIndices`, because a wrong colour
+  on a colour-coded diagram is worse than an obviously neutral one.
+- **Ink over an annotated PDF is opt-in and approximate.** `--overlay` draws
+  ink onto the original document, but placing it exactly needs the device's PDF
+  layout transform, which is not present in the synced data — the scene blocks
+  carry only `paperSize`, and ink coordinates run past the sheet box. Ink-only
+  output is exact, so it is the default.
 
 ## Development
 

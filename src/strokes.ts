@@ -1,0 +1,310 @@
+import { decodeBrush, rmColors } from "rmapi-js";
+
+/** A sampled point along a stroke. */
+export interface Point {
+  x: number;
+  y: number;
+  /** Rendered width at this point, already scaled. */
+  width: number;
+}
+
+export interface Stroke {
+  points: Point[];
+  /** Representative width for the whole stroke. */
+  width: number;
+  /** CSS colour, e.g. `#1c1e21`. */
+  color: string;
+  /** Pen name where known, else `raw:<code>`. */
+  brush: string;
+  /** Highlighters are translucent so underlying ink stays readable. */
+  opacity: number;
+}
+
+export interface Bounds {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+export interface PageGeometry {
+  strokes: Stroke[];
+  /** Typed text runs found on the page, in document order. */
+  text: string[];
+  /** Sheet size the device reports, if any. */
+  paperSize: [number, number] | null;
+  /** Tight bounds around all ink, or null when the page has none. */
+  bounds: Bounds | null;
+  /** Strokes skipped because they were deleted (tombstoned). */
+  deleted: number;
+  /** Palette indices encountered with no known colour mapping. */
+  unmappedColors: number[];
+}
+
+/**
+ * Decode a packed colour into CSS hex.
+ *
+ * rmapi-js documents this as a little-endian uint32 whose bytes are BGRA, so
+ * the low byte is blue rather than red. Reading it the other way round yields
+ * a plausible-looking but channel-swapped palette (cyan where yellow belongs),
+ * which is easy to ship by accident.
+ */
+export function decodeRgba(packed: number): string {
+  const n = packed >>> 0;
+  const b = n & 0xff;
+  const g = (n >>> 8) & 0xff;
+  const r = (n >>> 16) & 0xff;
+  const hex = (v: number) => v.toString(16).padStart(2, "0");
+  return `#${hex(r)}${hex(g)}${hex(b)}`;
+}
+
+/** Colours the monochrome palette covers, by raw index. */
+const MONO: Record<number, string> = {
+  0: "#000000",
+  1: "#808080",
+  2: "#ffffff",
+};
+
+/**
+ * Resolve a stroke's colour.
+ *
+ * Three tiers, most trustworthy first: an exact packed RGBA on the stroke
+ * (highlighter and shader carry one); a palette index observed elsewhere in
+ * the same document alongside an exact RGBA, which lets the document teach us
+ * its own palette; then the monochrome table. Anything left is reported as
+ * unmapped rather than guessed — a wrong colour is worse than a neutral one on
+ * a colour-coded diagram.
+ */
+function resolveColor(
+  rawColor: number,
+  rgba: number | undefined,
+  learned: Map<number, string>,
+  unmapped: Set<number>,
+): string {
+  if (rgba !== undefined && rgba !== null) return decodeRgba(rgba);
+
+  const fromDoc = learned.get(rawColor);
+  if (fromDoc) return fromDoc;
+
+  const mono = MONO[rawColor];
+  if (mono) return mono;
+
+  unmapped.add(rawColor);
+  return "#000000";
+}
+
+/** Highlighters must not paint over what they highlight. */
+function opacityFor(brush: string): number {
+  return brush === "highlighter" || brush === "shader" ? 0.35 : 1;
+}
+
+interface RawLine {
+  points: { x: number; y: number; width?: number; pressure?: number }[];
+  tool: number;
+  color: number;
+  colorRgba?: number;
+  scale: number;
+}
+
+function toStroke(
+  line: RawLine,
+  learned: Map<number, string>,
+  unmapped: Set<number>,
+): Stroke | null {
+  if (!line.points.length) return null;
+
+  const brush = decodeBrush(line.tool) ?? `raw:${line.tool}`;
+  const points: Point[] = line.points.map((p) => ({
+    x: p.x,
+    y: p.y,
+    width: Math.max((p.width ?? 2) * line.scale, 0.2),
+  }));
+  const width =
+    points.reduce((sum, p) => sum + p.width, 0) / points.length;
+
+  return {
+    points,
+    width,
+    color: resolveColor(line.color, line.colorRgba, learned, unmapped),
+    brush,
+    opacity: opacityFor(brush),
+  };
+}
+
+/**
+ * Collect palette index to exact colour pairs from strokes that carry both.
+ *
+ * Highlighter and shader strokes are the ones with an exact RGBA, so a
+ * document that uses a colour for both a highlighter and a pen teaches us that
+ * index for free.
+ */
+function learnPalette(blocks: unknown[]): Map<number, string> {
+  const learned = new Map<number, string>();
+  for (const block of blocks as Record<string, any>[]) {
+    if (block?.type !== "sceneLineItem") continue;
+    const value = block.item?.value;
+    if (!value) continue;
+    if (value.colorRgba === undefined || value.colorRgba === null) continue;
+    if (typeof value.color !== "number") continue;
+    if (!learned.has(value.color)) {
+      learned.set(value.color, decodeRgba(value.colorRgba));
+    }
+  }
+  return learned;
+}
+
+/** Pull typed text out of a v6 root text block, in document order. */
+function extractText(blocks: unknown[]): string[] {
+  const runs: string[] = [];
+  for (const block of blocks as Record<string, any>[]) {
+    if (block?.type !== "rootText") continue;
+    const items = block.text?.items;
+    if (!Array.isArray(items)) continue;
+    for (const item of items) {
+      // A tombstoned item has no value; a number is an inline format code.
+      if (typeof item?.value === "string" && item.value.length > 0) {
+        runs.push(item.value);
+      }
+    }
+  }
+  // Runs are stored per character-range, so join then split on real breaks.
+  const joined = runs.join("");
+  return joined.length > 0
+    ? joined
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+    : [];
+}
+
+/**
+ * Put highlighter and shader strokes behind everything else.
+ *
+ * On the device a highlighter sits under the ink it marks, so drawing in raw
+ * document order hides the very words being highlighted. A stable partition
+ * preserves order within each group, so overlapping pens still stack the way
+ * they were drawn.
+ */
+function washUnderInk(strokes: Stroke[]): Stroke[] {
+  const wash: Stroke[] = [];
+  const ink: Stroke[] = [];
+  for (const s of strokes) {
+    (s.opacity < 1 ? wash : ink).push(s);
+  }
+  return [...wash, ...ink];
+}
+
+function boundsOf(strokes: Stroke[]): Bounds | null {
+  if (strokes.length === 0) return null;
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  for (const stroke of strokes) {
+    const pad = stroke.width / 2;
+    for (const p of stroke.points) {
+      x0 = Math.min(x0, p.x - pad);
+      y0 = Math.min(y0, p.y - pad);
+      x1 = Math.max(x1, p.x + pad);
+      y1 = Math.max(y1, p.y + pad);
+    }
+  }
+  return Number.isFinite(x0) ? { x0, y0, x1, y1 } : null;
+}
+
+/**
+ * Normalize one page of either stroke format into a common geometry model.
+ *
+ * v6 stores strokes as a flat CRDT block list; v5 nests them in layers. Both
+ * reduce to the same thing for rendering, so callers never branch on version.
+ */
+export function pageGeometry(page: unknown): PageGeometry {
+  const p = page as Record<string, any> | undefined | null;
+  const unmapped = new Set<number>();
+  const strokes: Stroke[] = [];
+  let deleted = 0;
+
+  if (!p) {
+    return {
+      strokes,
+      text: [],
+      paperSize: null,
+      bounds: null,
+      deleted,
+      unmappedColors: [],
+    };
+  }
+
+  const paperSize = Array.isArray(p.paperSize)
+    ? ([p.paperSize[0], p.paperSize[1]] as [number, number])
+    : null;
+
+  if (Array.isArray(p.blocks)) {
+    const learned = learnPalette(p.blocks);
+    for (const block of p.blocks as Record<string, any>[]) {
+      if (block?.type !== "sceneLineItem") continue;
+      const value = block.item?.value;
+      if (!value?.points?.length) {
+        // Erased ink stays in the file as a tombstone with no value.
+        deleted++;
+        continue;
+      }
+      const stroke = toStroke(
+        {
+          points: value.points,
+          tool: value.tool,
+          color: value.color,
+          colorRgba: value.colorRgba,
+          scale: value.thicknessScale ?? 1,
+        },
+        learned,
+        unmapped,
+      );
+      if (stroke) strokes.push(stroke);
+    }
+    const ordered = washUnderInk(strokes);
+    return {
+      strokes: ordered,
+      text: extractText(p.blocks),
+      paperSize,
+      bounds: boundsOf(strokes),
+      deleted,
+      unmappedColors: [...unmapped].sort((a, b) => a - b),
+    };
+  }
+
+  if (Array.isArray(p.layers)) {
+    const learned = new Map<number, string>();
+    for (const layer of p.layers as Record<string, any>[]) {
+      for (const line of (layer?.lines ?? []) as Record<string, any>[]) {
+        if (!line?.points?.length) {
+          deleted++;
+          continue;
+        }
+        const stroke = toStroke(
+          {
+            points: line.points,
+            tool: line.brushType,
+            color: line.color,
+            scale: 1,
+          },
+          learned,
+          unmapped,
+        );
+        if (stroke) strokes.push(stroke);
+      }
+    }
+  }
+
+  return {
+    strokes: washUnderInk(strokes),
+    text: [],
+    paperSize,
+    bounds: boundsOf(strokes),
+    deleted,
+    unmappedColors: [...unmapped].sort((a, b) => a - b),
+  };
+}
+
+/** The colour names the monochrome palette knows, for diagnostics. */
+export const monochromePalette = rmColors;
