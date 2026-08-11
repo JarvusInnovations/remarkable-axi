@@ -7,7 +7,7 @@ import { client } from "../auth.js";
 import { bool, parseFlags, requirePositional, str } from "../flags.js";
 import { buildTree, lookup, normalizePath } from "../paths.js";
 import { listEntries } from "../entries.js";
-import { pageGeometry, type PageGeometry } from "../strokes.js";
+import { optimizeForReading, pageGeometry, type PageGeometry } from "../strokes.js";
 import { pagesToPdf, pageToSvg, overlayOnPdf, type Fit } from "../render.js";
 import { readConfig } from "../config.js";
 import { spec } from "../devices.js";
@@ -91,7 +91,7 @@ function summarize(pages: PageGeometry[]) {
 export async function fetch(args: string[]): Promise<Output> {
   const parsed = parseFlags("fetch", args, {
     value: ["--as", "--pages", "--fit", "--out"],
-    boolean: ["--overlay"],
+    boolean: ["--overlay", "--legible"],
   });
 
   const path = normalizePath(
@@ -110,7 +110,10 @@ export async function fetch(args: string[]): Promise<Output> {
     ]);
   }
 
-  const fitRaw = str(parsed, "--fit", "page").toLowerCase();
+  // Cropping to the ink spends the available pixels on the writing rather than
+  // on margin, which matters as much as stroke weight when a model reads it.
+  const legible = bool(parsed, "--legible");
+  const fitRaw = str(parsed, "--fit", legible ? "content" : "page").toLowerCase();
   if (fitRaw !== "content" && fitRaw !== "page") {
     throw new AxiError(`invalid --fit: ${fitRaw}`, "USAGE", [
       "Use `--fit page` for the whole sheet or `--fit content` to crop to the ink",
@@ -162,7 +165,9 @@ export async function fetch(args: string[]): Promise<Output> {
     );
   }
 
-  const chosen = indices.map((i) => allGeo[i]!);
+  const chosen = indices
+    .map((i) => allGeo[i]!)
+    .map((g) => (legible ? optimizeForReading(g) : g));
   const stats = summarize(chosen);
   const base = documentName(node.entry.visibleName) || "document";
   const target = str(parsed, "--out", "");
@@ -283,6 +288,7 @@ export async function fetch(args: string[]): Promise<Output> {
     strokes: stats.strokes,
     size,
     ...(ext === "svg" || overlaid ? {} : { fit }),
+    ...(legible ? { rendering: "legible (stroke weight rebalanced, not faithful)" } : {}),
     ...(stats.deleted > 0 ? { erasedSkipped: stats.deleted } : {}),
     ...(stats.text.length > 0 ? { typedTextLines: stats.text.length } : {}),
     // Reported rather than silently rendered black: a wrong colour on a

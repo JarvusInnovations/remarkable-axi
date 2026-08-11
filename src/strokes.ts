@@ -134,7 +134,7 @@ function toStroke(
   const points: Point[] = line.points.map((p) => ({
     x: p.x,
     y: p.y,
-    width: Math.max((p.width ?? 2) * line.scale, 0.2),
+    width: Math.max(p.width ?? 2, 0.2),
   }));
   const width =
     points.reduce((sum, p) => sum + p.width, 0) / points.length;
@@ -335,3 +335,89 @@ export function pageGeometry(page: unknown): PageGeometry {
 
 /** The colour names the monochrome palette knows, for diagnostics. */
 export const monochromePalette = rmColors;
+
+/** Stroke width as a fraction of typical stroke extent that reads cleanly. */
+const TARGET_BOLDNESS = 0.1;
+
+/** Below this, strokes risk vanishing when the page is rasterized. */
+const MIN_INK_WIDTH = 0.8;
+
+/** Relative luminance, for deciding whether ink is too pale to read. */
+function luminance(hex: string): number {
+  const m = /^#([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return 0;
+  const n = Number.parseInt(m[1]!, 16);
+  const [r, g, b] = [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
+  return (0.2126 * r! + 0.7152 * g! + 0.0722 * b!) / 255;
+}
+
+/** Darken a colour toward black until it has enough contrast on white. */
+function darken(hex: string, factor: number): string {
+  const m = /^#([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return hex;
+  const n = Number.parseInt(m[1]!, 16);
+  const ch = (v: number) => Math.round(v * factor).toString(16).padStart(2, "0");
+  return `#${ch((n >> 16) & 0xff)}${ch((n >> 8) & 0xff)}${ch(n & 0xff)}`;
+}
+
+/**
+ * Rebalance a page for machine reading rather than faithful reproduction.
+ *
+ * The dominant factor by far is stroke weight relative to letter size. A pen
+ * set thick and used to write small produces strokes almost as wide as they
+ * are long -- one real page measured 0.90, where legible handwriting sits near
+ * 0.1 -- and the letterforms merge into solid blobs. Rescaling weight to that
+ * target turned an unreadable page into a transcribable one, which is the
+ * whole justification for this mode existing.
+ *
+ * Weight is only ever reduced, never increased: emboldening thin writing
+ * merges it, and thinning past the target buys nothing at the resolutions a
+ * vision model actually sees while risking strokes dropping out entirely.
+ *
+ * Pale ink is darkened rather than forced to black, so colour coding survives
+ * while yellow on white stops being invisible. Highlighter wash is lightened
+ * because it sits under the very words being read.
+ *
+ * The result is deliberately *not* what the device shows. It is a reading aid.
+ */
+export function optimizeForReading(geo: PageGeometry): PageGeometry {
+  const extents = geo.strokes
+    .map((s) => {
+      const xs = s.points.map((p) => p.x);
+      const ys = s.points.map((p) => p.y);
+      return Math.hypot(
+        Math.max(...xs) - Math.min(...xs),
+        Math.max(...ys) - Math.min(...ys),
+      );
+    })
+    .filter((v) => v > 1)
+    .sort((a, b) => a - b);
+
+  if (extents.length === 0) return geo;
+
+  const medianExtent = extents[Math.floor(extents.length / 2)]!;
+  const widths = geo.strokes.map((s) => s.width).sort((a, b) => a - b);
+  const medianWidth = widths[Math.floor(widths.length / 2)]!;
+  if (medianWidth <= 0) return geo;
+
+  const boldness = medianWidth / medianExtent;
+  const factor = boldness > TARGET_BOLDNESS ? TARGET_BOLDNESS / boldness : 1;
+
+  const strokes = geo.strokes.map((s) => {
+    const wash = s.opacity < 1;
+    const width = Math.max(s.width * factor, MIN_INK_WIDTH);
+    const pale = !wash && luminance(s.color) > 0.55;
+    return {
+      ...s,
+      width,
+      points: s.points.map((p) => ({
+        ...p,
+        width: Math.max(p.width * factor, MIN_INK_WIDTH),
+      })),
+      color: pale ? darken(s.color, 0.55) : s.color,
+      opacity: wash ? Math.min(s.opacity, 0.15) : s.opacity,
+    };
+  });
+
+  return { ...geo, strokes, bounds: boundsOf(strokes) };
+}

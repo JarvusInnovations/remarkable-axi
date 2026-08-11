@@ -61,7 +61,7 @@ Verify with `remarkable-axi doctor`.
 | `send <url> [--dir <path>] [--title <t>]` | Fetch a web article, convert to EPUB, upload |
 | `put <file> [<dir>]` | Upload a local PDF or EPUB |
 | `replace <path> <file>` | Swap a document's contents, leaving exactly one at the path |
-| `fetch <path> [--as pdf\|svg\|text]` | Render handwriting to PDF/SVG, or extract typed text |
+| `fetch <path> [--as pdf\|svg\|text]` | Render handwriting to PDF/SVG, or extract typed text (`--legible` for OCR) |
 | `ls [<path>]` | List a folder's contents (`--all` for every document) |
 | `find <pattern>` | Search names by substring or regex |
 | `mkdir <path>` | Create a folder and every missing parent |
@@ -116,6 +116,16 @@ can read and act on them, and exit codes follow the AXI convention: `0` success
   read the PDF for vision without a rasterizer. Extended pages are handled:
   a single page can run several sheet-heights deep, so the output frame follows
   the ink rather than the nominal sheet size.
+- **`--legible` trades fidelity for recognition.** Stroke weight relative to
+  letter size dominates whether handwriting can be read, by machine or by eye.
+  A pen set thick and used to write small produces strokes almost as wide as
+  they are long — one real page measured 0.90, where legible writing sits near
+  0.1 — and letterforms merge into solid blobs. `--legible` rescales weight to
+  that target, crops to the ink, darkens pale colours without flattening them
+  to black, and fades highlighter wash. Weight is only ever reduced: thickening
+  thin writing merges it, and going thinner than the target buys nothing at the
+  resolutions a vision model sees while risking strokes dropping out. The
+  output is deliberately not what the device shows.
 - **Colour is measured, not guessed.** Highlighter and shader strokes carry a
   packed RGBA and come out exact. Pens store only a palette index, and no
   mapping ships for the colour ones, so the Paper Pro palette was read off a

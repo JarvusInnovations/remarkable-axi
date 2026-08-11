@@ -100,7 +100,8 @@ export const COMMAND_GROUPS: CommandGroup[] = [
           "--pages <spec>  page numbers and ranges, e.g. 1,3,7-9 (default: all)",
           "--fit <mode>    page (default) keeps the sheet; content crops to the ink",
           "--out <path>    where to write (default: ./<name>.<ext>)",
-          "--overlay       for annotated PDFs, draw ink over the original (placement approximate)",
+          "--overlay       for annotated PDFs, draw ink over the original",
+          "--legible       rebalance stroke weight for reading/OCR (implies --fit content; not faithful)",
         ],
         examples: [
           'remarkable-axi fetch "/Quick sheets" --as pdf',

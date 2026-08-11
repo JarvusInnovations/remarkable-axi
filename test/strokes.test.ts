@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { decodeRgba, pageGeometry } from "../src/strokes.js";
+import { decodeRgba, optimizeForReading, pageGeometry } from "../src/strokes.js";
 import { frameFor } from "../src/render.js";
 import { parsePageSelection } from "../src/commands/fetch.js";
 
@@ -242,5 +242,73 @@ describe("parsePageSelection", () => {
 
   test("tolerates whitespace and empty segments", () => {
     expect(parsePageSelection(" 1 , 2 ,", 5)).toEqual([0, 1]);
+  });
+});
+
+describe("optimizeForReading", () => {
+  /** A stroke of given extent and width, shaped like a letter segment. */
+  const glyph = (extent: number, width: number, extra: Record<string, unknown> = {}) =>
+    lineBlock(
+      [
+        { x: 0, y: 0, width },
+        { x: extent, y: 0, width },
+      ],
+      extra,
+    );
+
+  test("thins ink that is too bold to read", () => {
+    // A pen set thick and used to write small merges letterforms into blobs;
+    // one real page measured 0.90 where legible writing sits near 0.1.
+    const geo = pageGeometry(v6([glyph(21, 19), glyph(21, 19), glyph(21, 19)]));
+    const before = geo.strokes[0]!.width;
+    const after = optimizeForReading(geo).strokes[0]!.width;
+    expect(before / 21).toBeGreaterThan(0.5);
+    expect(after / 21).toBeLessThan(0.2);
+  });
+
+  test("leaves already-thin ink alone rather than emboldening it", () => {
+    // Thickening thin writing merges it, so weight is only ever reduced.
+    const geo = pageGeometry(v6([glyph(200, 4), glyph(200, 4), glyph(200, 4)]));
+    const out = optimizeForReading(geo);
+    expect(out.strokes[0]!.width).toBeCloseTo(geo.strokes[0]!.width, 5);
+  });
+
+  test("keeps strokes above the width that survives rasterizing", () => {
+    const geo = pageGeometry(v6([glyph(4000, 300), glyph(4000, 300), glyph(4000, 300)]));
+    for (const s of optimizeForReading(geo).strokes) {
+      expect(s.width).toBeGreaterThanOrEqual(0.8);
+    }
+  });
+
+  test("darkens pale ink but preserves colour coding", () => {
+    const geo = pageGeometry(
+      v6([
+        glyph(21, 19, { tool: 17, color: 13 }), // yellow: unreadable on white
+        glyph(21, 19, { tool: 17, color: 6 }), // blue: already legible
+        glyph(21, 19, { tool: 17, color: 6 }),
+      ]),
+    );
+    const out = optimizeForReading(geo);
+    const yellow = out.strokes.find((s) => s.color !== "#1a63d8")!;
+    expect(yellow.color).not.toBe("#f2c010");
+    expect(yellow.color).not.toBe("#000000"); // still recognisably yellow-ish
+    expect(out.strokes.filter((s) => s.color === "#1a63d8")).toHaveLength(2);
+  });
+
+  test("fades highlighter wash, which sits under the words being read", () => {
+    const geo = pageGeometry(
+      v6([
+        glyph(21, 19, { tool: 18, colorRgba: 0xffff00 }),
+        glyph(21, 19),
+        glyph(21, 19),
+      ]),
+    );
+    const wash = optimizeForReading(geo).strokes.find((s) => s.opacity < 1)!;
+    expect(wash.opacity).toBeLessThanOrEqual(0.15);
+  });
+
+  test("returns a blank page unchanged", () => {
+    const geo = pageGeometry(v6([]));
+    expect(optimizeForReading(geo).strokes).toEqual([]);
   });
 });
