@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { mkdir, readFile, writeFile, chmod } from "node:fs/promises";
 import { AxiError } from "axi-sdk-js";
 import { remarkable, type RemarkableApi } from "rmapi-js";
+import { timeoutMs, withTimeout } from "./timeout.js";
 
 const CONFIG_DIR = join(homedir(), ".config", "remarkable-axi");
 const TOKEN_FILE = join(CONFIG_DIR, "token");
@@ -57,7 +58,9 @@ export async function client(): Promise<RemarkableApi> {
   }
 
   try {
-    return await remarkable(token);
+    // Every cloud call gets a deadline: a stalled request otherwise produces no
+    // output, no error, and no exit.
+    return withTimeout(await remarkable(token), timeoutMs());
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new AxiError(

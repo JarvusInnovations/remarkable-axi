@@ -36,6 +36,19 @@ export const COMMAND_GROUPS: CommandGroup[] = [
         ],
       },
       {
+        usage: "replace <path> <file>",
+        summary:
+          "Swap a document's contents in one step, leaving exactly one at the path",
+        flags: [
+          "--name <name>  rename while replacing",
+          "--keep-old     upload the new copy but leave the old entry in place",
+        ],
+        examples: [
+          "remarkable-axi replace /Papers/Draft.pdf ./draft-v2.pdf",
+          'remarkable-axi replace "/Calibration/Calibration rM2" ./cal.pdf',
+        ],
+      },
+      {
         usage: "put <file> [<dir>]",
         summary: "Upload a local PDF or EPUB, creating the folder if missing",
         flags: ["--name <name>  document name shown on the device"],
@@ -71,6 +84,30 @@ export const COMMAND_GROUPS: CommandGroup[] = [
         examples: [
           'remarkable-axi find "transit"',
           'remarkable-axi find "^Chapter" --type doc',
+        ],
+      },
+    ],
+  },
+  {
+    group: "Read",
+    commands: [
+      {
+        usage: "fetch <path> [--as pdf|svg|text] [--pages 1-3,5] [--fit content|page]",
+        summary:
+          "Render a notebook's handwriting to PDF or SVG, or extract its typed text",
+        flags: [
+          "--as <fmt>      pdf (default, all pages), svg (one page), or text",
+          "--pages <spec>  page numbers and ranges, e.g. 1,3,7-9 (default: all)",
+          "--fit <mode>    page (default) keeps the sheet; content crops to the ink",
+          "--out <path>    where to write (default: ./<name>.<ext>)",
+          "--overlay       draw ink over the original (single-page documents only)",
+          "--legible       rebalance stroke weight for reading/OCR (implies --fit content; not faithful)",
+        ],
+        examples: [
+          'remarkable-axi fetch "/Quick sheets" --as pdf',
+          'remarkable-axi fetch "/Meeting Notes/Weekly" --as svg --pages 2 --fit content',
+          'remarkable-axi fetch "/Papers/Draft.pdf" --as pdf',
+          'remarkable-axi fetch "/Quick sheets" --as text',
         ],
       },
     ],
@@ -183,6 +220,7 @@ export function renderTopLevelHelp(): string {
 
   lines.push(
     "",
+    "Every cloud call times out after 120s; set REMARKABLE_TIMEOUT=<seconds> to change it (0 waits indefinitely).",
     "Run `remarkable-axi <command> --help` for usage on any command.",
     "Run `remarkable-axi` with no arguments to see current tablet state.",
   );

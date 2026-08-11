@@ -115,6 +115,13 @@ export async function put(args: string[]): Promise<Output> {
   const tree = buildTree((await listEntries(api)).entries);
   const { id: parent, created } = await mkdirp(api, tree, dir);
 
+  // The cloud happily stores two documents with the same name in one folder,
+  // and a path lookup can then only ever resolve one of them. Surface the
+  // collision rather than letting it be discovered later.
+  const collisions = [...tree.byId.values()].filter(
+    (n) => (n.entry.parent ?? "") === parent && n.entry.visibleName === name,
+  ).length;
+
   if (ext === ".pdf") {
     await api.putPdf(name, buffer, { parent });
   } else {
@@ -124,6 +131,18 @@ export async function put(args: string[]): Promise<Output> {
   return {
     uploaded: { name, dir, size: kb(size), format: ext.slice(1) },
     ...(created.length > 0 ? { created: created.join(", ") } : {}),
-    help: [`Run \`remarkable-axi ls ${dir}\` to confirm it landed`],
+    ...(collisions > 0
+      ? {
+          duplicate: `${collisions + 1} documents now named "${name}" in ${dir}`,
+        }
+      : {}),
+    help: [
+      `Run \`remarkable-axi ls ${dir}\` to confirm it landed`,
+      ...(collisions > 0
+        ? [
+            `Run \`remarkable-axi replace ${dir}/${name} <file>\` next time to supersede instead of duplicating`,
+          ]
+        : []),
+    ],
   };
 }
