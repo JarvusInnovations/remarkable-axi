@@ -56,6 +56,12 @@ export const COMMAND_GROUPS: CommandGroup[] = [
         examples: ["remarkable-axi ls", "remarkable-axi ls /Articles"],
       },
       {
+        usage: "devices",
+        summary:
+          "Show known reMarkable models with screen specs and PDF page sizes",
+        examples: ["remarkable-axi devices"],
+      },
+      {
         usage: "find <pattern>",
         summary: "Search every document and folder name by substring or regex",
         flags: [
@@ -103,6 +109,15 @@ export const COMMAND_GROUPS: CommandGroup[] = [
         usage: "doctor",
         summary: "Check pairing, connectivity, and account reachability",
         examples: ["remarkable-axi doctor"],
+      },
+      {
+        usage: "setup device <model>",
+        summary:
+          "Set the device to design for; its specs then appear in every session",
+        examples: [
+          "remarkable-axi setup device paper-pro",
+          "remarkable-axi setup device RM110",
+        ],
       },
       {
         usage: "setup hooks",
