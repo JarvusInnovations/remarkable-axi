@@ -312,3 +312,20 @@ describe("optimizeForReading", () => {
     expect(optimizeForReading(geo).strokes).toEqual([]);
   });
 });
+
+describe("pdfPageCount", () => {
+  test("counts pages, which is what gates overlay safety", async () => {
+    const { PDFDocument } = await import("pdf-lib");
+    const { pdfPageCount } = await import("../src/render.js");
+
+    const one = await PDFDocument.create();
+    one.addPage([612, 792]);
+    expect(await pdfPageCount(await one.save())).toBe(1);
+
+    // Overlay is refused above one page: annotated pages carry no reliable
+    // index into the original, so ink would land on the wrong ones.
+    const many = await PDFDocument.create();
+    for (let i = 0; i < 5; i++) many.addPage([612, 792]);
+    expect(await pdfPageCount(await many.save())).toBe(5);
+  });
+});

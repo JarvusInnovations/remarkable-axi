@@ -244,6 +244,12 @@ export function pageInkBox(pageW: number, pageH: number): Frame {
   return { x: -width / 2, y: 0, width, height: pageH * INK_PER_POINT };
 }
 
+/** Page count of an existing PDF, for deciding whether overlay is safe. */
+export async function pdfPageCount(bytes: Uint8Array): Promise<number> {
+  const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
+  return doc.getPageCount();
+}
+
 /**
  * Overlay a document's ink onto its own base PDF.
  *

@@ -8,7 +8,7 @@ import { bool, parseFlags, requirePositional, str } from "../flags.js";
 import { buildTree, lookup, normalizePath } from "../paths.js";
 import { listEntries } from "../entries.js";
 import { optimizeForReading, pageGeometry, type PageGeometry } from "../strokes.js";
-import { pagesToPdf, pageToSvg, overlayOnPdf, type Fit } from "../render.js";
+import { pagesToPdf, pageToSvg, overlayOnPdf, pdfPageCount, type Fit } from "../render.js";
 import { readConfig } from "../config.js";
 import { spec } from "../devices.js";
 import { documentName } from "../article.js";
@@ -244,6 +244,24 @@ export async function fetch(args: string[]): Promise<Output> {
     }
 
     if (basePdf) {
+      // Only annotated pages come back from the cloud, with no index into the
+      // original document -- and `cPages` carries no page order on at least
+      // some documents. Mapping their array position onto the base PDF's pages
+      // is therefore only sound when the base has a single page. Anything more
+      // would silently draw ink onto the wrong pages.
+      const basePages = await pdfPageCount(basePdf);
+      if (basePages > 1) {
+        throw new AxiError(
+          `--overlay needs a single-page document (${path} has ${basePages})`,
+          "UNSUPPORTED",
+          [
+            "Annotated pages carry no reliable index into the original document yet",
+            `Run \`remarkable-axi fetch "${path}" --as pdf\` for exact ink-only pages`,
+            `Run \`remarkable-axi fetch "${path}" --as pdf --legible\` to read the handwriting`,
+          ],
+        );
+      }
+
       const inkByIndex = new Map<number, PageGeometry>();
       indices.forEach((pageIndex) => {
         const geo = allGeo[pageIndex];
