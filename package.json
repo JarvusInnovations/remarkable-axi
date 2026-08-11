@@ -15,7 +15,8 @@
     "vitest": "^4.1.10"
   },
   "dependencies": {
-    "jsdom": "^30.0.1"
+    "jsdom": "^30.0.1",
+    "pdf-lib": "^1.17.1"
   },
   "version": "0.1.0",
   "description": "Send articles and documents to a reMarkable tablet and manage its cloud files — an agent-ergonomic CLI",
