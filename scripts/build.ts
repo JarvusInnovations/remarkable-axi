@@ -36,7 +36,7 @@ const result = await build({
   outfile: OUT,
   bundle: true,
   platform: "node",
-  target: "node20",
+  target: "node22",
   format: "esm",
   minify: false,
   sourcemap: false,
