@@ -58,11 +58,28 @@ export function decodeRgba(packed: number): string {
   return `#${hex(r)}${hex(g)}${hex(b)}`;
 }
 
-/** Colours the monochrome palette covers, by raw index. */
-const MONO: Record<number, string> = {
-  0: "#000000",
-  1: "#808080",
-  2: "#ffffff",
+/**
+ * Pen colours by raw palette index.
+ *
+ * 0-2 are the monochrome set the library documents. 6-13 are the Paper Pro's
+ * colour pens, read off a calibration page written on the device: each index
+ * was captured alongside its name in that pen's own colour. The hex values are
+ * chosen to match those names on screen rather than sampled from the panel, so
+ * they are faithful in hue but not colorimetrically exact.
+ *
+ * Indices are deliberately absent rather than guessed where no evidence
+ * exists; an unknown index draws black and is reported.
+ */
+const PALETTE: Record<number, string> = {
+  0: "#000000", // black
+  1: "#808080", // grey
+  2: "#ffffff", // white
+  6: "#1a63d8", // blue
+  7: "#d3312a", // red
+  10: "#1f9e4a", // green
+  11: "#00b3c4", // cyan
+  12: "#c4319b", // magenta
+  13: "#f2c010", // yellow
 };
 
 /**
@@ -86,8 +103,8 @@ function resolveColor(
   const fromDoc = learned.get(rawColor);
   if (fromDoc) return fromDoc;
 
-  const mono = MONO[rawColor];
-  if (mono) return mono;
+  const known = PALETTE[rawColor];
+  if (known) return known;
 
   unmapped.add(rawColor);
   return "#000000";
@@ -140,16 +157,26 @@ function toStroke(
  */
 function learnPalette(blocks: unknown[]): Map<number, string> {
   const learned = new Map<number, string>();
+  const conflicted = new Set<number>();
   for (const block of blocks as Record<string, any>[]) {
     if (block?.type !== "sceneLineItem") continue;
     const value = block.item?.value;
     if (!value) continue;
     if (value.colorRgba === undefined || value.colorRgba === null) continue;
     if (typeof value.color !== "number") continue;
-    if (!learned.has(value.color)) {
-      learned.set(value.color, decodeRgba(value.colorRgba));
+    const hex = decodeRgba(value.colorRgba);
+    const seen = learned.get(value.color);
+    if (seen === undefined) {
+      learned.set(value.color, hex);
+    } else if (seen !== hex) {
+      // The same index carrying two different colours means it is not a
+      // palette entry at all but a "the colour is in colorRgba" marker -- the
+      // highlighter's index 9 behaves exactly this way. Learning from it would
+      // paint unrelated strokes the first colour that happened to appear.
+      conflicted.add(value.color);
     }
   }
+  for (const index of conflicted) learned.delete(index);
   return learned;
 }
 

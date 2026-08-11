@@ -92,12 +92,43 @@ describe("pageGeometry", () => {
     expect(geo.unmappedColors).toEqual([]);
   });
 
+  test("resolves the calibrated pen palette", () => {
+    // Read off a calibration page: each index captured beside its name written
+    // in that pen's own colour.
+    const geo = pageGeometry(
+      v6([
+        lineBlock([{ x: 0, y: 0 }, { x: 1, y: 1 }], { tool: 17, color: 6 }),
+        lineBlock([{ x: 2, y: 2 }, { x: 3, y: 3 }], { tool: 17, color: 13 }),
+      ]),
+    );
+    expect(geo.strokes[0]!.color).toBe("#1a63d8"); // blue
+    expect(geo.strokes[1]!.color).toBe("#f2c010"); // yellow
+    expect(geo.unmappedColors).toEqual([]);
+  });
+
+  test("refuses to learn an index that carries two different colours", () => {
+    // Highlighter index 9 is a "colour is in colorRgba" marker, not a palette
+    // entry. Learning from it would paint later strokes the first colour seen.
+    const geo = pageGeometry(
+      v6([
+        lineBlock([{ x: 0, y: 0 }, { x: 1, y: 1 }], { tool: 18, color: 9, colorRgba: 0xbeeafe }),
+        lineBlock([{ x: 2, y: 2 }, { x: 3, y: 3 }], { tool: 18, color: 9, colorRgba: 0xffc38c }),
+        lineBlock([{ x: 4, y: 4 }, { x: 5, y: 5 }], { tool: 17, color: 9 }),
+      ]),
+    );
+    const withRgba = geo.strokes.filter((s) => s.brush === "highlighter");
+    expect(withRgba.map((s) => s.color).sort()).toEqual(["#beeafe", "#ffc38c"]);
+    const pen = geo.strokes.find((s) => s.brush === "fineliner")!;
+    expect(pen.color).toBe("#000000");
+    expect(geo.unmappedColors).toEqual([9]);
+  });
+
   test("reports unknown palette indices instead of guessing", () => {
     const geo = pageGeometry(
-      v6([lineBlock([{ x: 0, y: 0 }, { x: 1, y: 1 }], { color: 11 })]),
+      v6([lineBlock([{ x: 0, y: 0 }, { x: 1, y: 1 }], { color: 42 })]),
     );
     expect(geo.strokes[0]!.color).toBe("#000000");
-    expect(geo.unmappedColors).toEqual([11]);
+    expect(geo.unmappedColors).toEqual([42]);
   });
 
   test("puts highlighter strokes behind the ink", () => {

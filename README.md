@@ -112,18 +112,27 @@ can read and act on them, and exit codes follow the AXI convention: `0` success
   read the PDF for vision without a rasterizer. Extended pages are handled:
   a single page can run several sheet-heights deep, so the output frame follows
   the ink rather than the nominal sheet size.
-- **Colour is exact where the device records it, and never guessed.**
-  Highlighter and shader strokes carry a packed RGBA and come out exact. Other
-  pens store only a palette index, and the device ships no mapping for the
-  colour indices — where a document uses one colour for both a highlighter and
-  a pen, that index is learned from the document itself. Anything still unknown
-  draws black and is reported as `unmappedColorIndices`, because a wrong colour
-  on a colour-coded diagram is worse than an obviously neutral one.
-- **Ink over an annotated PDF is opt-in and approximate.** `--overlay` draws
-  ink onto the original document, but placing it exactly needs the device's PDF
-  layout transform, which is not present in the synced data — the scene blocks
-  carry only `paperSize`, and ink coordinates run past the sheet box. Ink-only
-  output is exact, so it is the default.
+- **Colour is measured, not guessed.** Highlighter and shader strokes carry a
+  packed RGBA and come out exact. Pens store only a palette index, and no
+  mapping ships for the colour ones, so the Paper Pro palette was read off a
+  calibration page written on the device — grey, white, blue, red, green, cyan,
+  magenta, yellow. Hues are faithful to those labels rather than sampled from
+  the panel. An index that appears with two different RGBA values is treated as
+  a "colour is in `colorRgba`" marker rather than a palette entry, which is how
+  the highlighter behaves. Anything still unknown draws black and is reported
+  as `unmappedColorIndices`.
+- **Ink over an annotated PDF is opt-in, and calibrated.** The device's PDF
+  layout transform is not in the synced data, so it was measured: a page of
+  printed targets at known coordinates, annotated on the device and solved by
+  least squares. A PDF page maps to ink `x [-803, 803]`, `y [0, 2141]`, fitted
+  to width and anchored at the top, with residuals under 0.4 ink units and no
+  per-page offset. Note this is unrelated to the reported `paperSize`, which
+  for PDF-backed documents is a canonical 1404x1872 the ink freely exceeds —
+  deriving the scale from it, as an earlier version did, places ink off-page.
+  Two limits remain: the calibration page shared the screen's 3:4 aspect, so
+  the fit rule for Letter and A4 is inferred rather than measured, and only one
+  device has been calibrated. Both surface as ink outside the page box, which
+  `--overlay` counts and reports rather than clipping.
 
 ## Development
 

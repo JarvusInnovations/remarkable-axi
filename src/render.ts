@@ -212,44 +212,78 @@ export async function pagesToPdf(
 }
 
 /**
+ * Width, in ink units, that a PDF page is fitted to on screen.
+ *
+ * Measured, not assumed. A calibration document with printed targets at known
+ * page coordinates was annotated on the device and solved by least squares:
+ * the page lands on ink x [-803, 803] and y [0, 2141] with residuals under
+ * 0.4 units, and the two calibration pages agreed to within 0.36 units, so
+ * there is no per-page offset. Note this is unrelated to the page's reported
+ * `paperSize`, which for PDF-backed documents is a canonical 1404x1872 that
+ * the ink coordinates freely exceed.
+ *
+ * Two limits are known and deliberately not papered over. The calibration page
+ * shared the screen's 3:4 aspect, which makes fit-to-width and fit-to-height
+ * the same transform -- so the fitting rule for other aspects (Letter, A4) is
+ * inferred, not measured. And it was written on one device; whether this
+ * constant is device-independent is untested. Both show up as ink falling
+ * outside the page box, which `overlayOnPdf` counts and reports rather than
+ * clipping away.
+ */
+const INK_PAGE_WIDTH = 1606;
+
+/**
+ * Map a PDF page box into ink coordinates.
+ *
+ * The page is fitted to width and anchored at the top, with x centred on zero,
+ * so a page's ink box is a pure function of its aspect ratio.
+ */
+export function pageInkBox(pageW: number, pageH: number): Frame {
+  const scale = INK_PAGE_WIDTH / pageW;
+  return {
+    x: -INK_PAGE_WIDTH / 2,
+    y: 0,
+    width: INK_PAGE_WIDTH,
+    height: pageH * scale,
+  };
+}
+
+/**
  * Overlay a document's ink onto its own base PDF.
  *
  * Annotated PDFs keep the original document and the ink separately, so this
- * loads the base and draws each page's strokes on top. Ink is positioned by
- * fitting the sheet box to the page box: the device shows the PDF page scaled
- * into the sheet, so reversing that mapping is what puts a mark back where it
- * was drawn. Pages with no ink pass through untouched.
+ * loads the base and draws each page's strokes on top, using the calibrated
+ * mapping above rather than inferring one from `paperSize`. Pages with no ink
+ * pass through untouched.
  */
 export async function overlayOnPdf(
   basePdf: Uint8Array,
   inkByPageIndex: Map<number, PageGeometry>,
-): Promise<Uint8Array> {
+): Promise<{ bytes: Uint8Array; outside: number }> {
   const doc = await PDFDocument.load(basePdf, { ignoreEncryption: true });
   const pages = doc.getPages();
+  let outside = 0;
 
   for (const [index, geo] of inkByPageIndex) {
     const page = pages[index];
     if (!page || geo.strokes.length === 0) continue;
 
-    const [sheetW, sheetH] = geo.paperSize ?? DEFAULT_PAPER;
     const pw = page.getWidth();
     const ph = page.getHeight();
+    const box = pageInkBox(pw, ph);
+    const scale = pw / box.width;
 
-    // The device fits the page into the sheet preserving aspect, so the same
-    // uniform scale applies to both axes, with the shorter axis centred.
-    const scale = Math.min(pw / sheetW, ph / sheetH);
-    const offsetX = (pw - sheetW * scale) / 2;
-    const offsetY = (ph - sheetH * scale) / 2;
+    // Ink drawn outside the page box is real -- the device lets you write past
+    // the sheet -- so it is counted and still drawn rather than clipped away.
+    if (geo.bounds) {
+      const b = geo.bounds;
+      if (b.x0 < box.x || b.x1 > box.x + box.width || b.y0 < box.y || b.y1 > box.y + box.height) {
+        outside++;
+      }
+    }
 
-    drawStrokes(
-      page,
-      geo.strokes,
-      { x: -sheetW / 2, y: 0, width: sheetW, height: sheetH },
-      scale,
-      offsetX,
-      offsetY,
-    );
+    drawStrokes(page, geo.strokes, box, scale);
   }
 
-  return doc.save();
+  return { bytes: await doc.save(), outside };
 }

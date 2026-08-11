@@ -209,6 +209,7 @@ export async function fetch(args: string[]): Promise<Output> {
   let bytes: Uint8Array;
   let ext: string;
   let overlaid = false;
+  let outsidePages = 0;
 
   if (format === "svg") {
     if (chosen.length > 1 && !target) {
@@ -243,7 +244,9 @@ export async function fetch(args: string[]): Promise<Output> {
         const geo = allGeo[pageIndex];
         if (geo && geo.strokes.length > 0) inkByIndex.set(pageIndex, geo);
       });
-      bytes = await overlayOnPdf(basePdf, inkByIndex);
+      const result = await overlayOnPdf(basePdf, inkByIndex);
+      bytes = result.bytes;
+      outsidePages = result.outside;
       overlaid = true;
     } else {
       bytes = await pagesToPdf(chosen, {
@@ -275,7 +278,7 @@ export async function fetch(args: string[]): Promise<Output> {
   return {
     wrote: collapseHome(out),
     source: path,
-    format: overlaid ? "pdf (ink over original, placement approximate)" : ext,
+    format: overlaid ? "pdf (ink over original)" : ext,
     pages: `${indices.length} of ${allGeo.length}`,
     strokes: stats.strokes,
     size,
@@ -290,9 +293,11 @@ export async function fetch(args: string[]): Promise<Output> {
     help: [
       `Read ${collapseHome(out)} to see the handwriting`,
       ...(overlaid
-        ? [
-            "Ink placement over the original is approximate; omit --overlay for exact ink-only pages",
-          ]
+        ? outsidePages > 0
+          ? [
+              `${outsidePages} page(s) have ink drawn outside the page box; it is kept, not clipped`,
+            ]
+          : []
         : fileType === "pdf"
           ? [
               "Ink only, positioned exactly; pass --overlay to draw it over the original document",
