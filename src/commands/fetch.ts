@@ -6,7 +6,7 @@ import { collapseHome } from "../output.js";
 import { client } from "../auth.js";
 import { bool, parseFlags, requirePositional, str } from "../flags.js";
 import { buildTree, lookup, normalizePath } from "../paths.js";
-import { listEntries } from "../entries.js";
+import { listEntries, pdfPageIndexes } from "../entries.js";
 import { optimizeForReading, pageGeometry, type PageGeometry } from "../strokes.js";
 import { pagesToPdf, pageToSvg, overlayOnPdf, pdfPageCount, type Fit } from "../render.js";
 import { readConfig } from "../config.js";
@@ -244,18 +244,22 @@ export async function fetch(args: string[]): Promise<Output> {
     }
 
     if (basePdf) {
-      // Only annotated pages come back from the cloud, with no index into the
-      // original document -- and `cPages` carries no page order on at least
-      // some documents. Mapping their array position onto the base PDF's pages
-      // is therefore only sound when the base has a single page. Anything more
-      // would silently draw ink onto the wrong pages.
+      // Only annotated pages come back from the cloud, keyed by id and in no
+      // meaningful order, so their place in the original comes from the
+      // document's content metadata rather than their position in the map.
+      let indexById = new Map<string, number>();
+      try {
+        indexById = pdfPageIndexes(await api.getContent(ref), rmPages.keys());
+      } catch {
+        indexById = new Map();
+      }
+
       const basePages = await pdfPageCount(basePdf);
-      if (basePages > 1) {
+      if (indexById.size === 0 && basePages > 1) {
         throw new AxiError(
-          `--overlay needs a single-page document (${path} has ${basePages})`,
+          `cannot place ink in ${path}: no page order in its metadata`,
           "UNSUPPORTED",
           [
-            "Annotated pages carry no reliable index into the original document yet",
             `Run \`remarkable-axi fetch "${path}" --as pdf\` for exact ink-only pages`,
             `Run \`remarkable-axi fetch "${path}" --as pdf --legible\` to read the handwriting`,
           ],
@@ -263,10 +267,17 @@ export async function fetch(args: string[]): Promise<Output> {
       }
 
       const inkByIndex = new Map<number, PageGeometry>();
+      const pageIds = [...rmPages.keys()];
       indices.forEach((pageIndex) => {
         const geo = allGeo[pageIndex];
-        if (geo && geo.strokes.length > 0) inkByIndex.set(pageIndex, geo);
+        const id = pageIds[pageIndex];
+        if (!geo || geo.strokes.length === 0) return;
+        // Single-page documents have only one place the ink can go.
+        const target = id !== undefined ? indexById.get(id) : undefined;
+        const resolved = target ?? (basePages === 1 ? 0 : undefined);
+        if (resolved !== undefined) inkByIndex.set(resolved, geo);
       });
+
       const result = await overlayOnPdf(basePdf, inkByIndex);
       bytes = result.bytes;
       outsidePages = result.outside;

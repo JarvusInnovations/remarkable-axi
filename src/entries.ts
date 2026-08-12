@@ -153,3 +153,43 @@ export async function listEntries(api: RemarkableApi): Promise<Listing> {
 
   return { entries, unreadable };
 }
+
+/**
+ * Resolve which page of the original PDF each annotated page belongs to.
+ *
+ * `getRmPages` returns only the pages carrying ink, keyed by page id and in no
+ * meaningful order, so an index into the original has to come from the
+ * document's content metadata. Two shapes exist: a legacy flat `pages` array of
+ * ids, and the newer `cPages.pages` objects. Documents in the wild use both.
+ *
+ * `redirectionPageMap` then maps a notebook page position onto the source PDF's
+ * page, which matters once pages have been inserted or removed — a negative
+ * entry means the page has no counterpart in the original and is dropped.
+ */
+export function pdfPageIndexes(
+  content: unknown,
+  pageIds: Iterable<string>,
+): Map<string, number> {
+  const c = content as Record<string, any> | null | undefined;
+  const order: string[] = Array.isArray(c?.pages)
+    ? (c!.pages as unknown[]).map(String)
+    : Array.isArray(c?.cPages?.pages)
+      ? (c!.cPages.pages as Record<string, any>[]).map((p) => String(p?.id))
+      : [];
+
+  const redirect: number[] | undefined = Array.isArray(c?.redirectionPageMap)
+    ? (c!.redirectionPageMap as number[])
+    : undefined;
+
+  const out = new Map<string, number>();
+  if (order.length === 0) return out;
+
+  for (const id of pageIds) {
+    const position = order.indexOf(id);
+    if (position < 0) continue;
+
+    const target = redirect?.[position] ?? position;
+    if (target >= 0) out.set(id, target);
+  }
+  return out;
+}

@@ -100,7 +100,7 @@ export const COMMAND_GROUPS: CommandGroup[] = [
           "--pages <spec>  page numbers and ranges, e.g. 1,3,7-9 (default: all)",
           "--fit <mode>    page (default) keeps the sheet; content crops to the ink",
           "--out <path>    where to write (default: ./<name>.<ext>)",
-          "--overlay       draw ink over the original (single-page documents only)",
+          "--overlay       draw ink over the original document, on the correct pages",
           "--legible       rebalance stroke weight for reading/OCR (implies --fit content; not faithful)",
         ],
         examples: [
