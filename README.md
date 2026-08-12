@@ -161,10 +161,10 @@ bun run build    # bundle to dist/bin/remarkable-axi.js
 bun run dev      # run from source
 ```
 
-The build bundles with esbuild rather than emitting plain files. That is load-
-bearing: `rmapi-js` imports `crc-32/crc32c` without a file extension and
-`crc-32` ships no `exports` map, so Node's ESM resolver cannot resolve it —
-unbundled output fails to start under plain `node`.
+The build bundles with esbuild rather than emitting plain files, so
+`npx -y remarkable-axi` fetches one file instead of installing the whole
+dependency tree. esbuild also lowers `await using`, which `rmapi-js` uses
+internally, keeping the floor at Node 22.
 
 ## License
 

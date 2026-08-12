@@ -30,9 +30,12 @@ function fakeApi(items: Item[]) {
   const lookup = (blobId: string) => byId.get(blobId.split(".")[0]!);
 
   const api = {
-    listIds: async () => items.map(({ id }) => ({ id, hash: `hash-${id}` })),
+    listRefs: async () => items.map(({ id }) => ({ id, hash: `hash-${id}` })),
     raw: {
       getEntries: async ({ id }: { id: string }) => {
+        // The library appends `.docSchema` itself and reMarkable validates the
+        // resulting name, so a suffixed id here is a real request failure.
+        if (id.includes(".")) throw new Error(`getEntries wants a bare id: ${id}`);
         const item = lookup(id);
         const entries = [];
         if (item?.metadata !== undefined) {
