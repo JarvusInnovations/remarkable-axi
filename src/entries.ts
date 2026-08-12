@@ -128,6 +128,51 @@ async function convertEntry(
 }
 
 /**
+ * Maximum reads in flight at once.
+ *
+ * Listing an account fans out over every item, and each item costs two or
+ * three requests, so an unbounded map puts thousands of requests in flight on
+ * a large account. They do not fail outright — they queue, and individual
+ * calls then take long enough to trip the per-call deadline, which reports
+ * healthy items as unreadable. Bounding the fan-out keeps each call fast
+ * enough to finish well inside its budget.
+ *
+ * Measured on an 884-item account: unbounded took 14s and misreported 198
+ * items; 12 took 33s, 32 took 15s, 64 took 8.4s, 128 took 5.6s, all correct.
+ * 64 sits past the steep part of the curve while leaving headroom on slower
+ * connections, where a larger fan-out would push per-call latency back toward
+ * the deadline.
+ */
+const MAX_CONCURRENT_READS = 64;
+
+/** Map over items with a bounded number in flight, preserving input order. */
+async function mapLimit<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<PromiseSettledResult<R>[]> {
+  const results = new Array<PromiseSettledResult<R>>(items.length);
+  let next = 0;
+
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const index = next++;
+      if (index >= items.length) return;
+      try {
+        results[index] = { status: "fulfilled", value: await fn(items[index]!) };
+      } catch (reason) {
+        results[index] = { status: "rejected", reason };
+      }
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, worker),
+  );
+  return results;
+}
+
+/**
  * List every item in the account.
  *
  * Stands in for `api.listItems()`, which is all-or-nothing: it validates each
@@ -136,8 +181,8 @@ async function convertEntry(
  */
 export async function listEntries(api: RemarkableApi): Promise<Listing> {
   const ids = await api.listIds();
-  const settled = await Promise.allSettled(
-    ids.map((ref) => convertEntry(api, ref)),
+  const settled = await mapLimit(ids, MAX_CONCURRENT_READS, (ref) =>
+    convertEntry(api, ref),
   );
 
   const entries: Entry[] = [];
