@@ -2,12 +2,15 @@
 /**
  * Bundle the CLI into a single self-contained `dist/bin.js`.
  *
- * Bundling is not just a size optimization here. `rmapi-js` imports
+ * Bundling makes `npx -y remarkable-axi` fetch one file instead of installing
+ * the whole dependency tree, which is most of the cold-start cost for a tool
+ * agents invoke through `npx`.
+ *
+ * It used to be load-bearing for a second reason: `rmapi-js` imported
  * `crc-32/crc32c` without a file extension, and `crc-32` publishes no
- * `exports` map, so Node's ESM resolver cannot resolve it — running the
- * unbundled output under plain `node` fails outright. esbuild resolves that
- * specifier at build time. It also makes `npx -y remarkable-axi` fetch one
- * file instead of installing the whole dependency tree.
+ * `exports` map, so Node's ESM resolver could not resolve it and unbundled
+ * output failed to start at all. Fixed upstream in rmapi-js 12.0.3, so that is
+ * now history rather than a constraint.
  */
 import { build } from "esbuild";
 import { readFile, chmod, rm } from "node:fs/promises";
@@ -45,8 +48,10 @@ const result = await build({
   // Node builtins that esbuild would otherwise try to polyfill, plus jsdom.
   // jsdom is ~12MB of transitive tree and resolves fine under Node's ESM
   // loader on its own, so it stays a normal runtime dependency; everything
-  // else is inlined, which is what fixes rmapi-js's unresolvable
-  // `crc-32/crc32c` import.
+  // else is inlined.
+  //
+  // `target` also matters: rmapi-js 13 holds the root lock with `await using`,
+  // which esbuild lowers here so the floor stays at Node 22.
   external: ["node:*", "jsdom"],
   logLevel: "warning",
   metafile: true,

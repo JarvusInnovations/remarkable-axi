@@ -79,10 +79,10 @@ async function convertEntry(
   api: RemarkableApi,
   { id, hash }: ItemRef,
 ): Promise<Entry | null> {
-  const { entries } = await api.raw.getEntries({
-    id: `${id}.docSchema`,
-    hash,
-  });
+  // `getEntries` takes the bare document id and appends the `.docSchema`
+  // suffix itself; passing the suffixed name doubles it and the server
+  // rejects the request on the rm-filename header.
+  const { entries } = await api.raw.getEntries({ id, hash });
 
   const metaEnt = entries.find((e) => e.id.endsWith(".metadata"));
   const contentEnt = entries.find((e) => e.id.endsWith(".content"));
@@ -180,8 +180,8 @@ async function mapLimit<T, R>(
  * throws away the whole listing. Here a bad item is dropped and counted.
  */
 export async function listEntries(api: RemarkableApi): Promise<Listing> {
-  const ids = await api.listIds();
-  const settled = await mapLimit(ids, MAX_CONCURRENT_READS, (ref) =>
+  const refs = await api.listRefs();
+  const settled = await mapLimit(refs, MAX_CONCURRENT_READS, (ref) =>
     convertEntry(api, ref),
   );
 

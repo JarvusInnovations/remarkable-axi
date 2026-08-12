@@ -17,7 +17,7 @@
         "esbuild": "^0.28.1",
         "fast-xml-parser": "^5.10.1",
         "fflate": "^0.8.3",
-        "rmapi-js": "^12.0.3",
+        "rmapi-js": "^13.0.0",
         "typescript": "^7.0.2",
         "vitest": "^4.1.10",
       },
@@ -330,7 +330,7 @@
 
     "require-from-string": ["require-from-string@2.0.2", "", {}, "sha512-Xf0nWe6RseziFMu+Ap9biiUbmplq6S9/p+7w7YXP/JBHhrUDDUhwa+vANyubuqfZWTveU//DYVGsDG7RKL/vEw=="],
 
-    "rmapi-js": ["rmapi-js@12.0.3", "", { "dependencies": { "core-js": "^3.50.0", "crc-32": "^1.2.2", "jszip": "^3.10.1", "uuid": "^14.0.0", "zod": "^3.25.76" } }, "sha512-xL8dh+DB+PCN4XHgk8R/4KDqYCWwOI9Yy/Zjep4xaRsuqGQdY2bsBkf70DLyQlH8bV/Ow+EkFAH83Mjv7ZdHlg=="],
+    "rmapi-js": ["rmapi-js@13.0.0", "", { "dependencies": { "core-js": "^3.50.0", "crc-32": "^1.2.2", "jszip": "^3.10.1", "uuid": "^14.0.0", "zod": "^3.25.76" } }, "sha512-9KN1AR96qfEIksKI9FigwVOZ5jnMzFzDC/OlBQDiYI+qyigrXMgvm66lCQ+RMsJMFBpJddT4lOmB8jmO70vMOw=="],
 
     "rolldown": ["rolldown@1.2.3", "", { "dependencies": { "@oxc-project/types": "=0.143.0", "@rolldown/pluginutils": "^1.0.0" }, "optionalDependencies": { "@rolldown/binding-android-arm64": "1.2.3", "@rolldown/binding-darwin-arm64": "1.2.3", "@rolldown/binding-darwin-x64": "1.2.3", "@rolldown/binding-freebsd-x64": "1.2.3", "@rolldown/binding-linux-arm-gnueabihf": "1.2.3", "@rolldown/binding-linux-arm64-gnu": "1.2.3", "@rolldown/binding-linux-arm64-musl": "1.2.3", "@rolldown/binding-linux-ppc64-gnu": "1.2.3", "@rolldown/binding-linux-s390x-gnu": "1.2.3", "@rolldown/binding-linux-x64-gnu": "1.2.3", "@rolldown/binding-linux-x64-musl": "1.2.3", "@rolldown/binding-openharmony-arm64": "1.2.3", "@rolldown/binding-win32-arm64-msvc": "1.2.3", "@rolldown/binding-win32-x64-msvc": "1.2.3" }, "bin": { "rolldown": "./bin/cli.mjs" } }, "sha512-rn9wpmxplLf7NLNyCk9FyWh3FM43DbY8jOzCdEPzH7uflhTftRbCEpqi6Ly2osgoU8OwObtmavMbWLaWy4LX7A=="],
 
