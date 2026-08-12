@@ -17,7 +17,7 @@
         "esbuild": "^0.28.1",
         "fast-xml-parser": "^5.10.1",
         "fflate": "^0.8.3",
-        "rmapi-js": "github:JarvusInnovations/rmapi-js#jarvus/v12-build",
+        "rmapi-js": "^12.0.3",
         "typescript": "^7.0.2",
         "vitest": "^4.1.10",
       },
@@ -220,6 +220,8 @@
 
     "convert-source-map": ["convert-source-map@2.0.0", "", {}, "sha512-Kvp459HrV2FEJ1CAsi1Ku+MY3kasH19TFykTz2xWmMeq6bk2NU3XXvfJ+Q61m0xktWwt+1HSYf3JZsTms3aRJg=="],
 
+    "core-js": ["core-js@3.50.0", "", {}, "sha512-BRWgOLKkFeCgRudR6zrs8p9XJZcE14grzKMMssoYrk6krtuEZ7MTKPIY5RzOnqsEKIR9kst7wNzphttraT+Yqw=="],
+
     "core-util-is": ["core-util-is@1.0.3", "", {}, "sha512-ZQBvi1DcpJ4GDqanjucZ2Hj3wEO5pZDS89BWbkcrvdxksJorwUDDZamX9ldFkp9aw2lmBDLgkObEA4DWNJ9FYQ=="],
 
     "crc-32": ["crc-32@1.2.2", "", { "bin": { "crc32": "bin/crc32.njs" } }, "sha512-ROmzCKrTnOwybPcJApAA6WBWij23HVfGVNKqqrZpuyZOHqK2CwHSvpGuyt/UNNvaIjEd8X5IFGp4Mh+Ie1IHJQ=="],
@@ -328,7 +330,7 @@
 
     "require-from-string": ["require-from-string@2.0.2", "", {}, "sha512-Xf0nWe6RseziFMu+Ap9biiUbmplq6S9/p+7w7YXP/JBHhrUDDUhwa+vANyubuqfZWTveU//DYVGsDG7RKL/vEw=="],
 
-    "rmapi-js": ["rmapi-js@github:JarvusInnovations/rmapi-js#78997f0", { "dependencies": { "crc-32": "^1.2.2", "jszip": "^3.10.1", "uint8array-extras": "^1.5.0", "uuid": "^14.0.0", "zod": "^3.25.76" } }, "JarvusInnovations-rmapi-js-78997f0", "sha512-kAqLQcB8bcASlQqfGsy5cFBYUu0OFFN65gTCTDU5k/9SIg8zpNc1oSoK2V1hhR37GewJ7XCzzcLOzIXFswSQDQ=="],
+    "rmapi-js": ["rmapi-js@12.0.3", "", { "dependencies": { "core-js": "^3.50.0", "crc-32": "^1.2.2", "jszip": "^3.10.1", "uuid": "^14.0.0", "zod": "^3.25.76" } }, "sha512-xL8dh+DB+PCN4XHgk8R/4KDqYCWwOI9Yy/Zjep4xaRsuqGQdY2bsBkf70DLyQlH8bV/Ow+EkFAH83Mjv7ZdHlg=="],
 
     "rolldown": ["rolldown@1.2.3", "", { "dependencies": { "@oxc-project/types": "=0.143.0", "@rolldown/pluginutils": "^1.0.0" }, "optionalDependencies": { "@rolldown/binding-android-arm64": "1.2.3", "@rolldown/binding-darwin-arm64": "1.2.3", "@rolldown/binding-darwin-x64": "1.2.3", "@rolldown/binding-freebsd-x64": "1.2.3", "@rolldown/binding-linux-arm-gnueabihf": "1.2.3", "@rolldown/binding-linux-arm64-gnu": "1.2.3", "@rolldown/binding-linux-arm64-musl": "1.2.3", "@rolldown/binding-linux-ppc64-gnu": "1.2.3", "@rolldown/binding-linux-s390x-gnu": "1.2.3", "@rolldown/binding-linux-x64-gnu": "1.2.3", "@rolldown/binding-linux-x64-musl": "1.2.3", "@rolldown/binding-openharmony-arm64": "1.2.3", "@rolldown/binding-win32-arm64-msvc": "1.2.3", "@rolldown/binding-win32-x64-msvc": "1.2.3" }, "bin": { "rolldown": "./bin/cli.mjs" } }, "sha512-rn9wpmxplLf7NLNyCk9FyWh3FM43DbY8jOzCdEPzH7uflhTftRbCEpqi6Ly2osgoU8OwObtmavMbWLaWy4LX7A=="],
 
@@ -371,8 +373,6 @@
     "tslib": ["tslib@1.14.1", "", {}, "sha512-Xni35NKzjgMrwevysHTCArtLDpPvye8zV/0E4EyYn43P7/7qvQwPh9BGkHewbMulVntbigmcT7rdX3BNo9wRJg=="],
 
     "typescript": ["typescript@7.0.2", "", { "optionalDependencies": { "@typescript/typescript-aix-ppc64": "7.0.2", "@typescript/typescript-darwin-arm64": "7.0.2", "@typescript/typescript-darwin-x64": "7.0.2", "@typescript/typescript-freebsd-arm64": "7.0.2", "@typescript/typescript-freebsd-x64": "7.0.2", "@typescript/typescript-linux-arm": "7.0.2", "@typescript/typescript-linux-arm64": "7.0.2", "@typescript/typescript-linux-loong64": "7.0.2", "@typescript/typescript-linux-mips64el": "7.0.2", "@typescript/typescript-linux-ppc64": "7.0.2", "@typescript/typescript-linux-riscv64": "7.0.2", "@typescript/typescript-linux-s390x": "7.0.2", "@typescript/typescript-linux-x64": "7.0.2", "@typescript/typescript-netbsd-arm64": "7.0.2", "@typescript/typescript-netbsd-x64": "7.0.2", "@typescript/typescript-openbsd-arm64": "7.0.2", "@typescript/typescript-openbsd-x64": "7.0.2", "@typescript/typescript-sunos-x64": "7.0.2", "@typescript/typescript-win32-arm64": "7.0.2", "@typescript/typescript-win32-x64": "7.0.2" }, "bin": { "tsc": "bin/tsc" } }, "sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA=="],
-
-    "uint8array-extras": ["uint8array-extras@1.5.0", "", {}, "sha512-rvKSBiC5zqCCiDZ9kAOszZcDvdAHwwIKJG33Ykj43OKcWsnmcBRL09YTU4nOeHZ8Y2a7l1MgTd08SBe9A8Qj6A=="],
 
     "undici": ["undici@8.10.0", "", {}, "sha512-HvltHd7avK13QIw/oLe4qoOLyoVSoafqJ2jYOrtMRBkbYT31eiBQ8O0ehRKZiEZCMEyLFQNIADpgCWC5fALvYQ=="],
 

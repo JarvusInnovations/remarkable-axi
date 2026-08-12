@@ -249,3 +249,48 @@ describe("mkdirp", () => {
     expect(result.id).toBe("");
   });
 });
+
+describe("pdfPageIndexes", () => {
+  test("reads the legacy flat pages array", async () => {
+    const { pdfPageIndexes } = await import("../src/entries.js");
+    const content = { pages: ["a", "b", "c"] };
+    expect([...pdfPageIndexes(content, ["c", "a"])]).toEqual([
+      ["c", 2],
+      ["a", 0],
+    ]);
+  });
+
+  test("reads the newer cPages shape", async () => {
+    const { pdfPageIndexes } = await import("../src/entries.js");
+    const content = { cPages: { pages: [{ id: "a" }, { id: "b" }] } };
+    expect(pdfPageIndexes(content, ["b"]).get("b")).toBe(1);
+  });
+
+  test("follows redirectionPageMap onto the source document", async () => {
+    const { pdfPageIndexes } = await import("../src/entries.js");
+    // Notebook position 1 corresponds to source page 4 once pages moved.
+    const content = { pages: ["a", "b", "c"], redirectionPageMap: [0, 4, 5] };
+    expect(pdfPageIndexes(content, ["b"]).get("b")).toBe(4);
+  });
+
+  test("drops pages with no counterpart in the original", async () => {
+    const { pdfPageIndexes } = await import("../src/entries.js");
+    // A negative entry marks a page inserted on the device; drawing it onto
+    // the source would put ink on an unrelated page.
+    const content = { pages: ["a", "b"], redirectionPageMap: [0, -1] };
+    const map = pdfPageIndexes(content, ["a", "b"]);
+    expect(map.get("a")).toBe(0);
+    expect(map.has("b")).toBe(false);
+  });
+
+  test("ignores ids the document does not list", async () => {
+    const { pdfPageIndexes } = await import("../src/entries.js");
+    expect(pdfPageIndexes({ pages: ["a"] }, ["zz"]).size).toBe(0);
+  });
+
+  test("returns nothing when no ordering is recorded", async () => {
+    const { pdfPageIndexes } = await import("../src/entries.js");
+    expect(pdfPageIndexes({}, ["a"]).size).toBe(0);
+    expect(pdfPageIndexes(null, ["a"]).size).toBe(0);
+  });
+});
