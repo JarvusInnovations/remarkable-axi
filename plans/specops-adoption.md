@@ -1,11 +1,12 @@
 ---
-status: in-progress
+status: done
 depends: []
 specs:
   - specs/README.md
   - specs/principles.md
   - specs/architecture.md
 issues: []
+pr: 9
 ---
 
 # Adopt spec-driven development
@@ -59,4 +60,26 @@ The vendored skill is a copy, so it drifts from upstream silently. Re-running
 
 ## Notes
 
+Landed alongside the design batch this branch exists to negotiate, so the same PR
+carries both the methodology and its first real use.
+
+Most of `principles.md` is transcription rather than invention. The calibration
+stance was already the project's practice — the ink transform solved by least squares,
+the palette read off a device-written page, indices left absent rather than guessed —
+but it lived in a README passage and a source comment where nothing steered a future
+implementer by it. Writing it down immediately paid out: applying it to the device
+table surfaced that four of five models are unverified, which became
+`behaviors/device-calibration.md` and four tracking issues.
+
+`reference.ts` as the single documentation source was likewise a real architecture
+decision recorded only as a code comment.
+
 ## Follow-ups
+
+- **Tracked as** — the vendored skill drifts from upstream silently; refreshing it is
+  a re-run of `npx skills add`, and nothing detects that it is due. Noted in Risks
+  rather than filed, since it applies to every repo that vendors a skill and is not
+  specific to this one.
+- **Deferred to plan** — command specs for the surface that is not being redesigned.
+  `specs/commands/README.md` declares the whole surface and `/audit-spec-drift` will
+  report the unspecified ones as gaps, which is the intended signal.
