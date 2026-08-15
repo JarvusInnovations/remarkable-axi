@@ -116,6 +116,22 @@ export function dpi(model: DeviceModel): number {
 }
 
 /** Native screen pixel dimensions for a model, e.g. `1404x1872`. */
+/**
+ * Panel width in pixels for a model, and the widest panel across all models.
+ *
+ * The widest is the fallback when no device target is set: it is an upper
+ * bound over hardware that exists rather than a guess about which one you own,
+ * so an image picked against it is never *short* of resolution for any
+ * reMarkable — see `specs/principles.md#measure-the-device-never-ship-a-guessed-constant`.
+ */
+export function panelWidth(model: DeviceModel): number {
+  return deviceScreens[model].width;
+}
+
+export function widestPanelWidth(): number {
+  return Math.max(...MODELS.map(panelWidth));
+}
+
 export function screenSize(model: DeviceModel): string {
   const { width, height } = deviceScreens[model];
   return `${width}x${height}`;

@@ -216,6 +216,16 @@ can read and act on them, and exit codes follow the AXI convention: `0` success
   moves it to trash by **id** rather than by path. It refuses outright when a
   path is already ambiguous or already occupied without `--replace`, rather
   than picking a victim or silently landing a duplicate.
+- **A URL's images are picked for the panel, not taken as served.** The device
+  renders an EPUB at its own resolution, so renditions are chosen from `srcset`
+  (`800w` widths and `2x` densities both) against the target panel's width: the
+  smallest that still covers it, or the largest offered when nothing does.
+  Taking `src` unconditionally loses in both directions — sites commonly default
+  to a thumbnail with the real resolutions in `srcset` (250px against a 1404px
+  panel is a 5.6x upscale), while others default to renditions larger than any
+  panel. With no device target set the width is the widest panel any reMarkable
+  has: an upper bound over hardware that exists rather than a guess about which
+  one you own.
 - **Uploads are PDF and EPUB only** — that is the cloud's limit, not this
   tool's. Pass a URL to `put` to turn a web page into an EPUB automatically.
 - **Handwriting renders to vector PDF and SVG.** `get` reads the device's

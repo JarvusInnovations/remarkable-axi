@@ -29,7 +29,7 @@ for why and what was tried.
 | --- | --- |
 | `.pdf`, `.epub` | uploaded as-is |
 | `.html` | rendered to PDF at the device page box, then uploaded — see [render](render.md) |
-| `http(s)://` URL | article extracted and converted to EPUB, then uploaded |
+| `http(s)://` URL | article extracted and converted to EPUB, then uploaded — see below |
 
 Dispatch is by inspection, never by flag. Adding a source format must not add a flag
 or a command — see
@@ -37,6 +37,28 @@ or a command — see
 
 The cloud accepts PDF and EPUB only; every other source is converted before upload,
 and an unconvertible source fails as `UNSUPPORTED_FORMAT` naming what is accepted.
+
+### Image renditions are chosen for the panel
+
+A reMarkable renders an EPUB at its panel's own resolution, so an article's images
+are selected against that width rather than taken as the page happened to serve them.
+
+Candidates come from `srcset` (both `800w` width descriptors and `2x` density
+descriptors, the latter resolved against a declared intrinsic width when there is
+one) plus `src` as the fallback. The chosen rendition is the **smallest that still
+covers the panel**; where nothing offered reaches it, the largest available.
+
+Both directions matter. Taking `src` unconditionally ships whatever the page
+defaulted to: sites commonly serve a small thumbnail with the real resolutions in
+`srcset` — a 250px image against a 1404px panel is a 5.6× upscale and visibly soft —
+while others default to renditions far larger than any panel, which is bytes the
+device stores and discards.
+
+The target width is the configured device's panel. With no device target set it is
+the **widest panel any reMarkable has**, which is an upper bound over hardware that
+exists rather than a guess about which one the user owns, so the result is never
+short of resolution for their device. The width used is reported as `images_for` so
+the choice is visible rather than implicit.
 
 ## Destination
 

@@ -5,6 +5,8 @@ import type { ItemRef, RemarkableApi } from "rmapi-js";
 import type { Output } from "../output.js";
 import { humanSize } from "../output.js";
 import { client } from "../auth.js";
+import { readConfig } from "../config.js";
+import { panelWidth, widestPanelWidth } from "../devices.js";
 import { listEntries } from "../entries.js";
 import { bool, parseFlags, requirePositional, str } from "../flags.js";
 import {
@@ -26,6 +28,8 @@ interface Source {
   size: number;
   name: string;
   url?: string;
+  /** Panel width image renditions were selected against, for URL sources. */
+  imagesFor?: string;
 }
 
 /** `--keep-old` is retired outright, not redirected — see specs/commands/README.md. */
@@ -115,13 +119,34 @@ async function loadLocal(file: string, nameOverride: string): Promise<Source> {
   return { ext: ext as ".pdf" | ".epub", buffer, size, name };
 }
 
-/** Fetch and convert a URL source. */
+/**
+ * Fetch and convert a URL source.
+ *
+ * Image renditions are chosen against the panel this document is headed for:
+ * the configured device when there is one, otherwise the widest panel any
+ * reMarkable has, so the result is never short of resolution for the hardware
+ * the user actually owns. `imagesFor` is reported so the choice is visible
+ * rather than implicit.
+ */
 async function loadUrl(url: string, nameOverride: string): Promise<Source> {
+  const configured = (await readConfig()).targetDevice;
+  const targetWidth = configured ? panelWidth(configured) : widestPanelWidth();
+
   const { name, buffer, article } = await articleToEpub(
     url,
     nameOverride || undefined,
+    targetWidth,
   );
-  return { ext: ".epub", buffer, size: buffer.byteLength, name, url: article.sourceUrl };
+  return {
+    ext: ".epub",
+    buffer,
+    size: buffer.byteLength,
+    name,
+    url: article.sourceUrl,
+    imagesFor: configured
+      ? `${targetWidth}px (${configured})`
+      : `${targetWidth}px (widest panel — no device target set)`,
+  };
 }
 
 async function upload(
@@ -304,6 +329,8 @@ export async function put(args: string[]): Promise<Output> {
         format: source.ext.slice(1),
       },
       ...(source.url ? { source: source.url } : {}),
+    ...(source.imagesFor ? { images_for: source.imagesFor } : {}),
+      ...(source.imagesFor ? { images_for: source.imagesFor } : {}),
       ...(trash.ok
         ? { backup: { trashed: trash.name, id: old.entry.id.slice(0, 8) } }
         : { warning: "the superseded document could not be moved to trash" }),
@@ -355,6 +382,7 @@ export async function put(args: string[]): Promise<Output> {
       format: source.ext.slice(1),
     },
     ...(source.url ? { source: source.url } : {}),
+    ...(source.imagesFor ? { images_for: source.imagesFor } : {}),
     ...(created.length > 0 ? { created: created.join(", ") } : {}),
     help: [
       `Run \`remarkable-axi ls ${resolution.parentPath}\` to confirm it landed`,
