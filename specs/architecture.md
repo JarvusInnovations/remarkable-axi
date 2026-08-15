@@ -30,9 +30,13 @@ The relevant shape of that API:
 - Mutations are root-rewrites guarded by the generation counter; a stale generation
   raises and is retried.
 - `delete` is `move(ref, TRASH_ID)` — the cloud has no hard delete exposed here.
-- There is **no in-place content update**. `putDocumentArchive` is the only call that
-  preserves a document id and is experimental, so content swaps are composites:
-  upload the new document, then move the superseded one to trash.
+- There is **no in-place content update**. `putDocumentArchive` round-trips a
+  document's full file set, but is marked experimental and is documented to assign
+  the reuploaded copy a **fresh** document id — it does not preserve one. So content
+  swaps are composites: upload the new document, then move the superseded one to
+  trash. See [ink-preservation](behaviors/ink-preservation.md#carrying-ink-forward-not-yet-shipped)
+  for what this ruled out when porting a document's ink onto its replacement was
+  investigated.
 - Uploads accept **PDF and EPUB only**. Every other input format is converted before
   it reaches the cloud.
 

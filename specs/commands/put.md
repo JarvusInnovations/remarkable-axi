@@ -14,8 +14,12 @@ Send something to the tablet. `<src>` is a local file or a URL; `<dest>` is a pa
 | --- | --- |
 | `--name <name>` | document name shown on the device (default: derived from source) |
 | `--replace` | swap the contents of the document already at `<dest>` |
-| `--keep-ink` | with `--replace`, carry the superseded document's ink onto the new one |
 | `--discard-ink` | with `--replace`, proceed when the target carries ink |
+
+`--keep-ink` — carrying the superseded document's ink onto the replacement — is
+designed but **not implemented**; see
+[ink-preservation](../behaviors/ink-preservation.md#carrying-ink-forward-not-yet-shipped)
+for why and what was tried.
 | `--device-page` | override an HTML source's declared `@page` with the device page box |
 | `--strict` | treat `check`-level error findings as fatal instead of warnings |
 
@@ -63,8 +67,8 @@ user was already being explicit about.
 
 `--replace` uploads the new document, then moves the superseded one to trash under a
 dated name. It refuses when the destination is ambiguous rather than picking a victim,
-and it refuses when the target carries ink unless `--keep-ink` or `--discard-ink` is
-given. All of that is [ink-preservation](../behaviors/ink-preservation.md).
+and it refuses when the target carries ink unless `--discard-ink` is given. All of
+that is [ink-preservation](../behaviors/ink-preservation.md).
 
 A failed upload leaves the original untouched: the new document lands first, and the
 old one is trashed only after the upload is confirmed.
@@ -91,8 +95,9 @@ uploaded:
 help[1]: Run `remarkable-axi ls /Papers` to confirm it landed
 ```
 
-Replacing adds the backup and, with `--keep-ink`, the per-page ink table from
-[ink-preservation](../behaviors/ink-preservation.md).
+Replacing adds the backup — see
+[ink-preservation](../behaviors/ink-preservation.md) for the per-page ink table
+`--keep-ink` would add once it ships.
 
 ## Failure
 
@@ -102,7 +107,7 @@ Replacing adds the backup and, with `--keep-ink`, the per-page ink table from
 | source format not convertible | `UNSUPPORTED_FORMAT` |
 | destination occupied, no `--replace` | `EXISTS` |
 | destination resolves to several documents | `AMBIGUOUS` |
-| `--replace` target carries ink, no ink flag | `HAS_INK` |
+| `--replace` target carries ink, no `--discard-ink` | `HAS_INK` |
 | `--replace` given, nothing at destination | `NOT_FOUND`, suggesting the plain form |
 | HTML source, no device target set | `NO_DEVICE`, naming `setup device` |
 
