@@ -79,7 +79,24 @@ function fmtPt(n: number): string {
 // ---------------------------------------------------------------------------
 
 const MIN_TRANSITIONS = 6;
-const MIN_BAND_HEIGHT_PX = 2;
+/**
+ * Shortest band that can still be a line of text.
+ *
+ * Transitions are counted across the whole scanline, so unrelated marks on
+ * one row sum together — and a few of them can clear MIN_TRANSITIONS without
+ * any text being present. A real case: a 2px dash inside a bordered callout
+ * shared its scanline with that box's two vertical borders; 2 transitions
+ * from the dash plus 4 from the borders cleared the threshold, so the dash
+ * became its own band and was reported as 0.64pt "text" while the actual
+ * caption beneath it measured 3.8pt.
+ *
+ * Rather than tune the transition count, bound the band: this rule's own
+ * legible floor is 12 device pixels, so a band of four pixels or fewer is
+ * not small text — it is a rule, a dash, or a raster artifact. Anything tall
+ * enough to be a letterform at all survives, including text well under the
+ * floor, which is the case the rule exists to catch.
+ */
+const MIN_BAND_HEIGHT_PX = 5;
 const EDGE_DELTA = 10;
 const MERGE_GAP_RATIO = 0.5;
 

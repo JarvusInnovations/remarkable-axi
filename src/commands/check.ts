@@ -47,6 +47,63 @@ function sortFindings(findings: Finding[]): Finding[] {
   return [...findings].sort((a, b) => a.page - b.page || CHECK_NAME_ORDER[a.check] - CHECK_NAME_ORDER[b.check]);
 }
 
+/** Compact page numbers into a readable list: [1,2,3,5,9,10] -> "1-3,5,9-10". */
+function pageRanges(pages: number[]): string {
+  const sorted = [...new Set(pages)].sort((a, b) => a - b);
+  const parts: string[] = [];
+  let start = sorted[0]!;
+  let prev = start;
+  for (const page of sorted.slice(1)) {
+    if (page === prev + 1) {
+      prev = page;
+      continue;
+    }
+    parts.push(start === prev ? `${start}` : `${start}-${prev}`);
+    start = page;
+    prev = page;
+  }
+  parts.push(start === prev ? `${start}` : `${start}-${prev}`);
+  return parts.join(",");
+}
+
+interface CollapsedFinding {
+  pages: string;
+  severity: Finding["severity"];
+  check: Finding["check"];
+  detail: string;
+}
+
+/**
+ * Collapse findings that say the same thing on more than one page.
+ *
+ * A page box belongs to the document and a template rule repeats on every
+ * page that uses the template, so reporting each per page multiplies one
+ * fact by the page count: a real ten-page deck produced twenty-one findings
+ * describing three problems, the page-box mismatch ten times over. That is
+ * the noise this linter's thresholds were tuned to avoid, arriving through
+ * a different door — a finding an agent has already read nine times is one
+ * it learns to skip.
+ *
+ * Identical (check, severity, detail) triples merge into one row carrying
+ * the pages they were seen on, so the evidence is preserved and the count
+ * reflects distinct problems rather than page count.
+ */
+function collapseFindings(findings: Finding[]): CollapsedFinding[] {
+  const groups = new Map<string, { finding: Finding; pages: number[] }>();
+  for (const finding of sortFindings(findings)) {
+    const key = `${finding.check}\u0000${finding.severity}\u0000${finding.detail}`;
+    const group = groups.get(key);
+    if (group) group.pages.push(finding.page);
+    else groups.set(key, { finding, pages: [finding.page] });
+  }
+  return [...groups.values()].map(({ finding, pages }) => ({
+    pages: pageRanges(pages),
+    severity: finding.severity,
+    check: finding.check,
+    detail: finding.detail,
+  }));
+}
+
 async function exists(path: string): Promise<boolean> {
   try {
     await stat(path);
@@ -214,13 +271,16 @@ export async function check(args: string[]): Promise<Output> {
     }
 
     const screen = screenSize(model);
-    const sorted = sortFindings(findings);
+    const collapsed = collapseFindings(findings);
     const page1Box = totalPages > 0 ? doc.getPage(0).getMediaBox() : box;
 
     const output: Output = {
       check: `${collapseHome(file)}, ${totalPages} page${totalPages === 1 ? "" : "s"}, rasterized at ${dpi}dpi (${screen})`,
       page_box: pageBoxSummary(model, box, page1Box, caveat),
-      findings: sorted.length > 0 ? sorted : "clean — every page checked, nothing to report",
+      findings:
+        collapsed.length > 0
+          ? collapsed
+          : "clean — every page checked, nothing to report",
     };
 
     if (!noImages) {
