@@ -136,6 +136,32 @@ describe("home", () => {
     expect((out.recent as unknown[])?.length).toBeGreaterThan(0);
   });
 
+  test("a delta containing only a deletion still shows a recent list", async () => {
+    // The delta is non-empty (a document changed) but nothing in it survives
+    // into the tree, because a trashed entry is excluded. Keying the fallback
+    // on the changed *set* rather than the resulting pool left this blank on
+    // an account holding hundreds of documents.
+    const items = [
+      document("a", "One", "1700000000000"),
+      document("b", "Two", "1700000005000"),
+    ];
+    const refs = items.map(({ id }) => ({ id, hash: `hash-${id}` }));
+    fake = fakeApi({ rootHash: "root-1", generation: 1, refs, items }).api;
+    await home();
+
+    const remaining = [items[0]!];
+    fake = fakeApi({
+      rootHash: "root-2",
+      generation: 2,
+      refs: remaining.map(({ id }) => ({ id, hash: `hash-${id}` })),
+      items: remaining,
+    }).api;
+    const out = await home();
+
+    expect(out.status).toContain("paired, 1 documents");
+    expect((out.recent as unknown[])?.length).toBe(1);
+  });
+
   test("cloud unreachable with a cache degrades to it, exit-safe, with age stated", async () => {
     const items = [document("a", "One", "1700000000000")];
     const refs = items.map(({ id }) => ({ id, hash: `hash-${id}` }));
