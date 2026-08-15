@@ -8,6 +8,7 @@ import {
 import { home } from "./commands/home.js";
 import { ls, find } from "./commands/browse.js";
 import { devices } from "./commands/devices.js";
+import { page } from "./commands/page.js";
 import { fetch as fetchCmd } from "./commands/fetch.js";
 import { send, put } from "./commands/send.js";
 import { replace } from "./commands/replace.js";
@@ -46,6 +47,7 @@ export async function main(argv: string[] = process.argv.slice(2)) {
       ls,
       find,
       devices,
+      page,
       fetch: fetchCmd,
       send,
       put,
