@@ -1,12 +1,12 @@
 import { readFile, stat } from "node:fs/promises";
 import { basename, extname } from "node:path";
 import { AxiError } from "axi-sdk-js";
-import type { RemarkableApi } from "rmapi-js";
+import type { Entry, ItemRef, RemarkableApi } from "rmapi-js";
 import type { Output } from "../output.js";
 import { client } from "../auth.js";
 import { bool, parseFlags, requirePositional, str } from "../flags.js";
 import { buildTree, normalizePath, type Node } from "../paths.js";
-import { listEntries } from "../entries.js";
+import { loadTree, recordMutation } from "../cache.js";
 import { documentName } from "../article.js";
 
 const UPLOADABLE = new Set([".pdf", ".epub"]);
@@ -33,12 +33,10 @@ async function upload(
   name: string,
   parent: string,
   bytes: Uint8Array,
-): Promise<string> {
-  const ref =
-    ext === ".pdf"
-      ? await api.putPdf(name, bytes, { parent })
-      : await api.putEpub(name, bytes, { parent });
-  return ref.id;
+): Promise<ItemRef> {
+  return ext === ".pdf"
+    ? await api.putPdf(name, bytes, { parent })
+    : await api.putEpub(name, bytes, { parent });
 }
 
 /**
@@ -98,7 +96,7 @@ export async function replace(args: string[]): Promise<Output> {
   }
 
   const api = await client();
-  const before = buildTree((await listEntries(api)).entries);
+  const before = buildTree((await loadTree(api)).entries);
   const existing = nodesAt(before, path);
 
   if (existing.length === 0) {
@@ -132,9 +130,21 @@ export async function replace(args: string[]): Promise<Output> {
   const bytes = new Uint8Array(await readFile(file));
 
   // Upload first: if this throws, the original is still there.
-  const newId = await upload(api, ext, name, parent, bytes);
+  const newRef = await upload(api, ext, name, parent, bytes);
+  const newEntry = {
+    id: newRef.id,
+    hash: newRef.hash,
+    type: "DocumentType",
+    fileType: ext.slice(1),
+    visibleName: name,
+    lastModified: new Date().toISOString(),
+    lastOpened: "",
+    pinned: false,
+    parent,
+  } as Entry;
 
   if (bool(parsed, "--keep-old")) {
+    await recordMutation(api, { upsert: [newEntry] });
     return {
       uploaded: { name, path, size: human(size), format: ext.slice(1) },
       kept: `old entry retained (${old.entry.id.slice(0, 8)})`,
@@ -153,9 +163,15 @@ export async function replace(args: string[]): Promise<Output> {
     removed = false;
   }
 
+  await recordMutation(api, {
+    upsert: [newEntry],
+    ...(removed ? { remove: [old.entry.id] } : {}),
+  });
+
   // Verify the end state rather than assuming it: the whole point of this verb
-  // is that the caller does not have to check.
-  const after = buildTree((await listEntries(api)).entries);
+  // is that the caller does not have to check. This also proves the cache
+  // update above kept up: the reload below should be a single-request hit.
+  const after = buildTree((await loadTree(api)).entries);
   const remaining = nodesAt(after, path);
 
   return {
@@ -164,7 +180,7 @@ export async function replace(args: string[]): Promise<Output> {
       name,
       size: human(size),
       format: ext.slice(1),
-      newId: newId.slice(0, 8),
+      newId: newRef.id.slice(0, 8),
       oldId: old.entry.id.slice(0, 8),
     },
     ...(removed ? {} : { warning: "the old entry could not be trashed" }),

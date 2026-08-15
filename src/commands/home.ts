@@ -2,7 +2,7 @@ import type { Output } from "../output.js";
 import { collapseHome } from "../output.js";
 import { readToken, tokenPath } from "../auth.js";
 import { client } from "../auth.js";
-import { listEntries } from "../entries.js";
+import { loadTree } from "../cache.js";
 import { age, recencyKey } from "../time.js";
 import { readConfig } from "../config.js";
 import { spec } from "../devices.js";
@@ -41,6 +41,12 @@ async function targetBlock(): Promise<Record<string, unknown>> {
  * This loads on every agent session, so it stays deliberately small: identity,
  * pairing state, and a short recency window. Anything deeper belongs in an
  * explicit command.
+ *
+ * Tree state comes from the generation-keyed cache (`src/cache.ts`): an
+ * unchanged root costs one request, a changed root costs one plus metadata
+ * for whatever moved, and an unreachable cloud degrades to the cached tree
+ * with its age stated rather than producing no output at all — see
+ * `specs/behaviors/cloud-cache.md`.
  */
 export async function home(): Promise<Output> {
   const token = await readToken();
@@ -57,26 +63,38 @@ export async function home(): Promise<Output> {
     };
   }
 
-  let nodes: Node[];
+  let result;
   try {
     const api = await client();
-    nodes = [...buildTree((await listEntries(api)).entries).byId.values()];
+    result = await loadTree(api);
   } catch (error) {
-    // The hook must never break a session start, so an unreachable cloud
-    // degrades to a status line rather than an error.
+    // No cache to fall back on, so this is a genuine structured error rather
+    // than a degrade — but the hook must never break a session start, so it
+    // still exits 0 with a payload that plainly signals "no data" rather than
+    // pretending to have healthy counts.
     return {
-      status: "paired, cloud unreachable",
+      status: "paired, cloud unreachable, no cached data",
+      ...(await targetBlock()),
       error: error instanceof Error ? error.message : String(error),
-      help: ["Run `remarkable-axi doctor` to diagnose"],
+      help: [
+        "Run `remarkable-axi doctor` to diagnose",
+        "Retry once the reMarkable cloud is reachable",
+      ],
     };
   }
 
+  const nodes = [...buildTree(result.entries).byId.values()];
   const documents = nodes.filter((n) => n.entry.type === "DocumentType");
   const folders = nodes.filter((n) => n.entry.type === "CollectionType");
 
+  const cloudNote =
+    result.source === "stale"
+      ? ` (cached, ${age(result.updatedAt)} old — cloud unreachable)`
+      : "";
+
   if (documents.length === 0) {
     return {
-      status: `paired, 0 documents, ${folders.length} folders`,
+      status: `paired, 0 documents, ${folders.length} folders${cloudNote}`,
       ...(await targetBlock()),
       help: [
         "Run `remarkable-axi send <url> --dir /Articles` to send a web article",
@@ -85,14 +103,26 @@ export async function home(): Promise<Output> {
     };
   }
 
-  const recent = [...documents]
+  // The documents this call actually fetched — because their hash moved
+  // since the cache was last validated — are exactly what the recent section
+  // wants to show, so there is no separate pass to compute it. On a cache hit
+  // or a stale degrade nothing moved, so fall back to the fully-known tree
+  // rather than showing nothing: the whole point of the cache is that it's
+  // already available for free.
+  const changedIds = new Set(result.changed.map((e) => e.id));
+  const pool =
+    changedIds.size > 0
+      ? documents.filter((n) => changedIds.has(n.entry.id))
+      : documents;
+
+  const recent = [...pool]
     .sort((a, b) => recencyKey(b.entry.lastModified) - recencyKey(a.entry.lastModified))
     .slice(0, RECENT_LIMIT);
 
   return {
-    status: `paired, ${documents.length} documents, ${folders.length} folders`,
+    status: `paired, ${documents.length} documents, ${folders.length} folders${cloudNote}`,
     ...(await targetBlock()),
-    recent: recent.map((n) => ({
+    recent: recent.map((n: Node) => ({
       type: n.entry.type === "DocumentType" ? n.entry.fileType : "folder",
       path: n.path,
       modified: age(n.entry.lastModified),

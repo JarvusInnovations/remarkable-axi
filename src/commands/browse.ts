@@ -1,7 +1,7 @@
 import { AxiError } from "axi-sdk-js";
 import type { Output } from "../output.js";
 import { client } from "../auth.js";
-import { listEntries } from "../entries.js";
+import { loadTree } from "../cache.js";
 import { age } from "../time.js";
 import { bool, parseFlags, str, requirePositional } from "../flags.js";
 import {
@@ -30,7 +30,7 @@ export async function ls(args: string[]): Promise<Output> {
   const parsed = parseFlags("ls", args, { boolean: ["--all"] });
   const path = normalizePath(parsed.positional[0] ?? "/");
   const api = await client();
-  const tree = buildTree((await listEntries(api)).entries);
+  const tree = buildTree((await loadTree(api)).entries);
 
   if (bool(parsed, "--all")) {
     const all = [...tree.byId.values()]
@@ -129,7 +129,7 @@ export async function find(args: string[]): Promise<Output> {
   }
 
   const api = await client();
-  const tree = buildTree((await listEntries(api)).entries);
+  const tree = buildTree((await loadTree(api)).entries);
 
   const hits = [...tree.byId.values()]
     .filter((n) => {

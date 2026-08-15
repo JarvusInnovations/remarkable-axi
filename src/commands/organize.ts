@@ -1,7 +1,8 @@
 import { AxiError } from "axi-sdk-js";
+import type { Entry } from "rmapi-js";
 import type { Output } from "../output.js";
 import { client } from "../auth.js";
-import { listEntries } from "../entries.js";
+import { loadTree, recordMutation } from "../cache.js";
 import { bool, parseFlags, requirePositional } from "../flags.js";
 import {
   buildTree,
@@ -29,7 +30,7 @@ export async function mkdir(args: string[]): Promise<Output> {
   }
 
   const api = await client();
-  const tree = buildTree((await listEntries(api)).entries);
+  const tree = buildTree((await loadTree(api)).entries);
   const { created } = await mkdirp(api, tree, path);
 
   // Already existing is the desired state, not a failure (AXI §6).
@@ -39,6 +40,10 @@ export async function mkdir(args: string[]): Promise<Output> {
       help: [`Run \`remarkable-axi ls ${path}\` to see its contents`],
     };
   }
+
+  await recordMutation(api, {
+    upsert: created.map((p) => tree.byPath.get(p)!.entry),
+  });
 
   return {
     folder: path,
@@ -67,7 +72,7 @@ export async function mv(args: string[]): Promise<Output> {
   );
 
   const api = await client();
-  const tree = buildTree((await listEntries(api)).entries);
+  const tree = buildTree((await loadTree(api)).entries);
 
   const node = lookup(tree, from);
   if (!node) {
@@ -101,7 +106,11 @@ export async function mv(args: string[]): Promise<Output> {
     };
   }
 
-  await api.move({ id: node.entry.id, hash: node.entry.hash }, parent);
+  const moved = await api.move({ id: node.entry.id, hash: node.entry.hash }, parent);
+
+  await recordMutation(api, {
+    upsert: [{ ...node.entry, hash: moved.hash, parent } as Entry],
+  });
 
   return {
     moved: { name: node.entry.visibleName, from, to },
@@ -116,7 +125,7 @@ export async function rm(args: string[]): Promise<Output> {
   );
 
   const api = await client();
-  const tree = buildTree((await listEntries(api)).entries);
+  const tree = buildTree((await loadTree(api)).entries);
 
   const node = lookup(tree, path);
   if (!node) {
@@ -143,6 +152,8 @@ export async function rm(args: string[]): Promise<Output> {
   }
 
   await api.delete({ id: node.entry.id, hash: node.entry.hash });
+
+  await recordMutation(api, { remove: [node.entry.id] });
 
   return {
     trashed: { name: node.entry.visibleName, path },

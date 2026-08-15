@@ -3,9 +3,10 @@ import type { Output } from "../output.js";
 import { collapseHome } from "../output.js";
 import { register } from "rmapi-js";
 import { client, readToken, tokenPath, writeToken } from "../auth.js";
-import { parseFlags, requirePositional } from "../flags.js";
+import { bool, parseFlags, requirePositional } from "../flags.js";
 import { buildTree } from "../paths.js";
-import { listEntries } from "../entries.js";
+import { discardCache, loadTree } from "../cache.js";
+import { age } from "../time.js";
 import { setupDevice } from "./devices.js";
 
 
@@ -59,7 +60,7 @@ export async function login(args: string[]): Promise<Output> {
 }
 
 export async function doctor(args: string[]): Promise<Output> {
-  parseFlags("doctor", args, {});
+  const parsed = parseFlags("doctor", args, { boolean: ["--rebuild"] });
 
   const token = await readToken();
   const fromEnv = Boolean(process.env.REMARKABLE_TOKEN?.trim());
@@ -77,17 +78,22 @@ export async function doctor(args: string[]): Promise<Output> {
     };
   }
 
+  // Discarding and rebuilding is the only supported repair for a cache
+  // suspected wrong — there is no partial-invalidation escape hatch.
+  if (bool(parsed, "--rebuild")) await discardCache();
+
   const started = Date.now();
   try {
     const api = await client();
-    const { entries, unreadable } = await listEntries(api);
-    const tree = buildTree(entries);
+    const result = await loadTree(api);
+    const tree = buildTree(result.entries);
     const documents = [...tree.byId.values()].filter(
       (n) => n.entry.type === "DocumentType",
     ).length;
     const folders = [...tree.byId.values()].filter(
       (n) => n.entry.type === "CollectionType",
     ).length;
+    const reachable = result.source !== "stale";
 
     return {
       doctor: {
@@ -95,17 +101,30 @@ export async function doctor(args: string[]): Promise<Output> {
         token: fromEnv
           ? "REMARKABLE_TOKEN (environment)"
           : collapseHome(tokenPath),
-        reachable: "yes",
+        reachable: reachable ? "yes" : "no",
         latency: `${Date.now() - started}ms`,
         documents,
         folders,
+        cache: {
+          generation: result.generation,
+          age: age(result.updatedAt),
+        },
         // Surfaced rather than hidden: a listing that quietly drops items
         // reads as complete when it isn't.
-        ...(unreadable > 0 ? { unreadable } : {}),
+        ...(result.unreadable > 0 ? { unreadable: result.unreadable } : {}),
+        ...(reachable ? {} : { error: "cloud unreachable; serving cached tree" }),
       },
+      ...(reachable
+        ? {}
+        : {
+            help: [
+              "Check network connectivity to the reMarkable cloud",
+              `The tree above is cached and ${age(result.updatedAt)} old`,
+            ],
+          }),
     };
   } catch (error) {
-    if (error instanceof AxiError) throw error;
+    if (error instanceof AxiError && error.code !== "CLOUD_UNREACHABLE") throw error;
     const message = error instanceof Error ? error.message : String(error);
     return {
       doctor: {

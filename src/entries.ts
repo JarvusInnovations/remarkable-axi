@@ -173,14 +173,18 @@ async function mapLimit<T, R>(
 }
 
 /**
- * List every item in the account.
+ * Read a specific set of items, dropping and counting anything unreadable.
  *
- * Stands in for `api.listItems()`, which is all-or-nothing: it validates each
- * item against a strict schema inside a `Promise.all`, so one malformed entry
- * throws away the whole listing. Here a bad item is dropped and counted.
+ * The bounded-fan-out, tolerant-parsing machinery `listEntries` needs for a
+ * full account walk applies just as much to a short list of items whose hash
+ * moved since the last cache validation — refetching only those is the whole
+ * point of the generation-keyed cache (`src/cache.ts`), so the read path is
+ * shared rather than duplicated.
  */
-export async function listEntries(api: RemarkableApi): Promise<Listing> {
-  const refs = await api.listRefs();
+export async function resolveEntries(
+  api: RemarkableApi,
+  refs: ItemRef[],
+): Promise<Listing> {
   const settled = await mapLimit(refs, MAX_CONCURRENT_READS, (ref) =>
     convertEntry(api, ref),
   );
@@ -197,6 +201,18 @@ export async function listEntries(api: RemarkableApi): Promise<Listing> {
   }
 
   return { entries, unreadable };
+}
+
+/**
+ * List every item in the account.
+ *
+ * Stands in for `api.listItems()`, which is all-or-nothing: it validates each
+ * item against a strict schema inside a `Promise.all`, so one malformed entry
+ * throws away the whole listing. Here a bad item is dropped and counted.
+ */
+export async function listEntries(api: RemarkableApi): Promise<Listing> {
+  const refs = await api.listRefs();
+  return resolveEntries(api, refs);
 }
 
 /**
