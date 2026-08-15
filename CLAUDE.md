@@ -1,6 +1,6 @@
 # remarkable-axi
 
-An [AXI](https://github.com/JarvusInnovations/agent-skills) CLI for the reMarkable
+An [AXI](https://axi.md) CLI for the reMarkable
 cloud: send documents to a tablet, pull handwriting back off it, and manage the
 files in between. Built with bun, bundled to a single file, published to npm.
 

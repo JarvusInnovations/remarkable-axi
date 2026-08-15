@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 Send articles and documents to a reMarkable tablet, design pages *for* its panel,
-and pull handwriting back off it — an [AXI](https://github.com/kunchenguid/axi)
+and pull handwriting back off it — an [AXI](https://axi.md)
 CLI built for agents to drive via shell execution.
 
 No `rmapi` binary, no Go toolchain, no Python. It talks to the reMarkable cloud

@@ -34,7 +34,7 @@ the behavior spec defines it.
 - Output examples are illustrative of *shape*, not byte-exact fixtures.
 - Errors are specified with their message and their `help` lines, because those are
   the contract an agent acts on — not incidental wording.
-- The [AXI standard](https://github.com/JarvusInnovations/agent-skills) governs output
+- The [AXI standard](https://axi.md) governs output
   format, error shape, flag validation, and help across every command. It is assumed
   rather than restated; specs cover only what is specific to this tool.
 
