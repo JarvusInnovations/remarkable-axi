@@ -290,6 +290,23 @@ function findVerticalRuleCols(raster: RasterPage): RuleCandidate[] {
  */
 const AA_BIAS_PX = 0.28;
 
+/**
+ * Ghostscript release the antialiasing bias above was measured against.
+ *
+ * The correction is a property of that rasterizer's AA kernel, not of the
+ * page — so on any other release it is an unverified constant applied to a
+ * real measurement, which is exactly what this project refuses to ship
+ * silently (`specs/principles.md#measure-the-device-never-ship-a-guessed-constant`).
+ * `checkHairlines` therefore caps itself at `warn` off-calibration rather
+ * than raising the one `error` severity in the linter on an assumption.
+ */
+export const CALIBRATED_GS = "10.02";
+
+/** Whether a detected Ghostscript version is the one AA_BIAS_PX was measured on. */
+export function gsIsCalibrated(version: string | undefined): boolean {
+  return typeof version === "string" && version.startsWith(`${CALIBRATED_GS}.`);
+}
+
 function correctedThicknessPx(rawPx: number): number {
   return Math.max(0, rawPx - AA_BIAS_PX);
 }
@@ -345,7 +362,12 @@ function median(values: number[]): number {
 }
 
 /** The worst (thinnest) hairline finding on the page, if any rule falls under one device pixel. */
-export function checkHairlines(raster: RasterPage, page: number, dpi: number): Finding | null {
+export function checkHairlines(
+  raster: RasterPage,
+  page: number,
+  dpi: number,
+  opts: { gsVersion?: string } = {},
+): Finding | null {
   const onePx = ptPerPixel(dpi);
   const halfPx = onePx / 2;
 
@@ -363,12 +385,21 @@ export function checkHairlines(raster: RasterPage, page: number, dpi: number): F
   }
 
   if (!worst) return null;
-  const severity: Severity = worst.thicknessPt < halfPx ? "error" : "warn";
+
+  // The only `error` in the linter, and it depends on a correction measured
+  // on one Ghostscript release. Off that release the measurement stands but
+  // the correction does not, so the verdict is capped rather than asserted.
+  const calibrated = gsIsCalibrated(opts.gsVersion);
+  const severity: Severity =
+    worst.thicknessPt < halfPx && calibrated ? "error" : "warn";
+  const caveat = calibrated
+    ? ""
+    : ` (measured under Ghostscript ${opts.gsVersion ?? "unknown"}; the antialiasing correction was calibrated on ${CALIBRATED_GS}.x, so this is reported as a warning)`;
   return {
     page,
     severity,
     check: "hairlines",
-    detail: `${fmtPt(worst.thicknessPt)}pt rule — below ${fmtPt(onePx)}pt resolvable at ${dpi}dpi`,
+    detail: `${fmtPt(worst.thicknessPt)}pt rule — below ${fmtPt(onePx)}pt resolvable at ${dpi}dpi${caveat}`,
   };
 }
 

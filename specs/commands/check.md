@@ -65,6 +65,24 @@ most documents do not have.
 The rasterized pages are the extension point. `check` measures the medium; the caller
 measures the content.
 
+### Severity is bounded by what has actually been measured
+
+A finding may only reach `error` when everything its threshold rests on was measured
+rather than assumed. In practice that leaves **hairlines** as the only rule able to
+raise one, because its threshold is arithmetic on the device's own density — and even
+then only when the rasterizer in use is the one its antialiasing correction was
+calibrated against. On any other rasterizer release the measurement still stands but
+the correction does not, so the finding is reported at `warn` and says why.
+
+`contrast` never exceeds `warn` at all: the panel's grey separation is a published
+figure nobody here has measured on hardware.
+
+This is the same discipline as [device-calibration](../behaviors/device-calibration.md),
+applied to the measuring instrument instead of the device. A linter that raises
+confident errors from unverified constants teaches an agent to ignore it, which is
+worse than having no linter — see
+[Best-effort operations report per-item outcomes](../principles.md#best-effort-operations-report-per-item-outcomes).
+
 ## Output
 
 ```

@@ -196,7 +196,9 @@ export async function check(args: string[]): Promise<Output> {
       const pageNum = i + 1;
       const raster = await rasterizePage(gs.path, pdfPath, pageNum, dpi);
 
-      const hairline = checkHairlines(raster, pageNum, dpi);
+      const hairline = checkHairlines(raster, pageNum, dpi, {
+        gsVersion: gs.version,
+      });
       if (hairline) findings.push(hairline);
       const contrast = checkContrast(raster, pageNum);
       if (contrast) findings.push(contrast);

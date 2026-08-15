@@ -6,7 +6,12 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { findGhostscript } from "../../src/gs.js";
 import { findChrome } from "../../src/chrome.js";
 import { rasterizePage, type RasterPage } from "../../src/lint/rasterize.js";
-import { checkContrast, checkHairlines, checkTypeSize } from "../../src/lint/rules.js";
+import {
+  CALIBRATED_GS,
+  checkContrast,
+  checkHairlines,
+  checkTypeSize,
+} from "../../src/lint/rules.js";
 import { render } from "../../src/commands/render.js";
 
 const gs = await findGhostscript();
@@ -53,9 +58,21 @@ describe.skipIf(gs === null)("raster lint rules", () => {
 
   test("a rule well under one device pixel trips hairlines as error", async () => {
     const raster = await rasterizeFirstPage(await buildRulePdf(0.1));
-    const finding = checkHairlines(raster, 1, RM110_DPI);
+    const finding = checkHairlines(raster, 1, RM110_DPI, {
+      gsVersion: `${CALIBRATED_GS}.1`,
+    });
     expect(finding).toMatchObject({ page: 1, severity: "error", check: "hairlines" });
     expect(finding?.detail).toContain("resolvable at 226dpi");
+  });
+
+  test("off the calibrated Ghostscript the same rule is capped at warn", async () => {
+    // The measurement still stands; the antialiasing correction behind the
+    // error threshold does not, so the verdict is softened rather than
+    // asserted on an unverified constant.
+    const raster = await rasterizeFirstPage(await buildRulePdf(0.1));
+    const finding = checkHairlines(raster, 1, RM110_DPI, { gsVersion: "9.55.0" });
+    expect(finding).toMatchObject({ page: 1, severity: "warn", check: "hairlines" });
+    expect(finding?.detail).toContain("calibrated on");
   });
 
   test("a rule comfortably over one device pixel does not trip hairlines", async () => {
