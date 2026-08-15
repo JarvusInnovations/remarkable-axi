@@ -41,7 +41,7 @@ error: /Talks/Flyer has ink on 3 of 12 pages; --replace would discard it
 help: carry the ink onto the new version —
         remarkable-axi put flyer.pdf "/Talks/Flyer" --replace --keep-ink
       save it separately first —
-        remarkable-axi get "/Talks/Flyer" --overlay --out flyer-annotated.pdf
+        remarkable-axi get "/Talks/Flyer" --overlay flyer-annotated.pdf
       or replace and let it go —
         remarkable-axi put flyer.pdf "/Talks/Flyer" --replace --discard-ink
 ```

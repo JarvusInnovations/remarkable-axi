@@ -97,8 +97,8 @@ export async function home(): Promise<Output> {
       status: `paired, 0 documents, ${folders.length} folders${cloudNote}`,
       ...(await targetBlock()),
       help: [
-        "Run `remarkable-axi send <url> --dir /Articles` to send a web article",
-        "Run `remarkable-axi put <file> <dir>` to upload a PDF or EPUB",
+        'Run `remarkable-axi put "<url>" /Articles` to send a web article',
+        "Run `remarkable-axi put <file> <dest>` to upload a PDF or EPUB",
       ],
     };
   }
@@ -131,7 +131,7 @@ export async function home(): Promise<Output> {
       documents.length > RECENT_LIMIT
         ? `Run \`remarkable-axi ls --all\` for all ${documents.length} documents`
         : undefined,
-      "Run `remarkable-axi send <url> --dir /Articles` to send a web article",
+      'Run `remarkable-axi put "<url>" /Articles` to send a web article',
       "Run `remarkable-axi ls <path>` to browse a folder",
     ].filter(Boolean) as string[],
   };
