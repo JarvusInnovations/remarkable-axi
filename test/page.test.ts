@@ -3,6 +3,7 @@ import {
   cssBlock,
   describeDelta,
   detectPageBox,
+  injectPageBox,
   parseDeclaredPageBox,
 } from "../src/page.js";
 import { pageBox } from "../src/devices.js";
@@ -144,5 +145,66 @@ describe("cssBlock", () => {
     const block = cssBlock({ width: 447, height: 596 });
     expect(block).toContain("margin: 0");
     expect(block).not.toMatch(/margin:\s*[1-9]/);
+  });
+});
+
+describe("injectPageBox", () => {
+  const RM110 = pageBox("RM110");
+
+  test("inserts the block right before </head> on a well-formed document", () => {
+    const html = "<html><head><title>t</title></head><body>hi</body></html>";
+    const out = injectPageBox(html, RM110);
+    expect(out.indexOf("@page")).toBeLessThan(out.indexOf("</head>"));
+    expect(out).toContain("</head><body>hi</body></html>");
+    expect(parseDeclaredPageBox(out)).toEqual(RM110);
+  });
+
+  test("composes with the author's own @page rule instead of replacing it", () => {
+    // The documented wrinkle: `@page { margin: 0 }` with no `size` parses as
+    // absent, so injection must add a second rule rather than mangling the
+    // author's first one.
+    const html =
+      "<html><head><style>@page { margin: 0; } body { color: red; }</style></head><body>x</body></html>";
+    const out = injectPageBox(html, RM110);
+
+    expect(out).toContain("@page { margin: 0; }");
+    expect(out).toContain("body { color: red; }");
+    expect((out.match(/@page/g) ?? []).length).toBe(2);
+    // The injected rule composes with, not replaces, the author's — reading
+    // the box back still finds exactly the device size.
+    expect(parseDeclaredPageBox(out)).toEqual(RM110);
+  });
+
+  test("falls back to right after <head> when there is no </head>", () => {
+    const html = "<head><body>no closing head tag</body>";
+    const out = injectPageBox(html, RM110);
+    expect(out.indexOf("<head>")).toBeLessThan(out.indexOf("@page"));
+    expect(parseDeclaredPageBox(out)).toEqual(RM110);
+  });
+
+  test("falls back to right after <html> when there is no <head> at all", () => {
+    const html = "<html><body>no head element</body></html>";
+    const out = injectPageBox(html, RM110);
+    expect(out.indexOf("<html>")).toBeLessThan(out.indexOf("@page"));
+    expect(parseDeclaredPageBox(out)).toEqual(RM110);
+  });
+
+  test("prepends to the document when there is neither <head> nor <html>", () => {
+    const html = "<p>a bare fragment</p>";
+    const out = injectPageBox(html, RM110);
+    expect(out.startsWith("<style>")).toBe(true);
+    expect(out.indexOf("@page")).toBeLessThan(out.indexOf("<p>a bare fragment</p>"));
+    expect(parseDeclaredPageBox(out)).toEqual(RM110);
+  });
+
+  test("the injected box always reads back as matching, for every model", () => {
+    for (const model of ["RM100", "RM110", "RM02A", "RM03A", "RM102"] as const) {
+      const box = pageBox(model);
+      const html = "<html><head></head><body></body></html>";
+      const out = injectPageBox(html, box);
+      const declared = parseDeclaredPageBox(out);
+      expect(declared, model).toEqual(box);
+      expect(detectPageBox(declared, box), model).toEqual({ status: "matches" });
+    }
   });
 });

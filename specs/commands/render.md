@@ -54,7 +54,14 @@ rendered:
 help[1]: Run `remarkable-axi check ./flyer.pdf` to lint it for the panel
 ```
 
-`page:` states whether the box was injected, matched, or honored-with-a-delta.
+`page:` states whether the box was injected, matched, honored-with-a-delta, or
+overridden. `--device-page` on a differing declaration produces a fourth
+disposition — the device box is used, and the declaration it replaced is reported
+with its delta so the override is never silent:
+
+```
+page: 447x596pt (overridden; declared 612x792pt, 165pt wider, 196pt taller)
+```
 
 ## Failure
 

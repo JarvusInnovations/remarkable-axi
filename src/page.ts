@@ -94,25 +94,11 @@ function parseLength(token: string): number | null {
   return factor === undefined ? null : value * factor;
 }
 
-const PAGE_RULE = /@page\s*(?:[^{]*)\{([^}]*)\}/i;
+const PAGE_RULE = /@page\s*(?:[^{]*)\{([^}]*)\}/gi;
 const SIZE_PROP = /size\s*:\s*([^;]+);?/i;
 
-/**
- * Extract a declared `@page { size: ... }` box from HTML/CSS text, in
- * points.
- *
- * Only numeric sizes are understood (`pt`, `in`, `mm`, `cm`, `px`) — named
- * page sizes (`A4`, `letter`) and orientation keywords are not resolved to a
- * box and read as no declaration, same as `@page` being absent entirely.
- * Every size this tool itself emits (`page --css`, and `render`'s injected
- * box) is numeric, so this covers every document the tool round-trips; a
- * keyword size only appears in HTML this tool did not author.
- */
-export function parseDeclaredPageBox(html: string): PageBox | null {
-  const pageMatch = PAGE_RULE.exec(html);
-  if (!pageMatch) return null;
-
-  const sizeMatch = SIZE_PROP.exec(pageMatch[1]!);
+function sizeFromBody(body: string): PageBox | null {
+  const sizeMatch = SIZE_PROP.exec(body);
   if (!sizeMatch) return null;
 
   const tokens = sizeMatch[1]!.trim().split(/\s+/).filter(Boolean);
@@ -126,6 +112,34 @@ export function parseDeclaredPageBox(html: string): PageBox | null {
     return width === null || height === null ? null : { width, height };
   }
   return null;
+}
+
+/**
+ * Extract a declared `@page { size: ... }` box from HTML/CSS text, in
+ * points.
+ *
+ * Only numeric sizes are understood (`pt`, `in`, `mm`, `cm`, `px`) — named
+ * page sizes (`A4`, `letter`) and orientation keywords are not resolved to a
+ * box and read as no declaration, same as `@page` being absent entirely.
+ * Every size this tool itself emits (`page --css`, and `render`'s injected
+ * box) is numeric, so this covers every document the tool round-trips; a
+ * keyword size only appears in HTML this tool did not author.
+ *
+ * A document can carry more than one unnamed `@page` rule — `render`
+ * composes its own alongside whatever the author declared rather than
+ * rewriting it (`injectPageBox`) — so every rule is scanned and the last one
+ * that declares a numeric size wins, matching the CSS cascade a real
+ * renderer applies rather than only reading the first rule in the document.
+ */
+export function parseDeclaredPageBox(html: string): PageBox | null {
+  PAGE_RULE.lastIndex = 0;
+  let result: PageBox | null = null;
+  let match: RegExpExecArray | null;
+  while ((match = PAGE_RULE.exec(html)) !== null) {
+    const box = sizeFromBody(match[1]!);
+    if (box) result = box;
+  }
+  return result;
 }
 
 /**
@@ -144,4 +158,41 @@ export function cssBlock(box: PageBox): string {
     `:root { --page-w: ${w}; --page-h: ${h}; }`,
     `html, body { width: ${w}; height: ${h}; margin: 0; }`,
   ].join("\n");
+}
+
+const HEAD_CLOSE = /<\/head\s*>/i;
+const HEAD_OPEN = /<head[^>]*>/i;
+const HTML_OPEN = /<html[^>]*>/i;
+
+/**
+ * Add `cssBlock(box)` to an HTML document as its own `<style>` element,
+ * composing with whatever the document already declares rather than
+ * replacing it.
+ *
+ * Used both when a source declares no `@page` size at all (a bare
+ * `@page { margin: 0 }` still parses as absent — see
+ * `parseDeclaredPageBox`) and when `--device-page` overrides a differing
+ * declaration. Either way the new rule is placed last, immediately before
+ * `</head>`, so the cascade resolves it in `render`'s favor for any
+ * property both blocks set (namely `size`) while leaving unrelated
+ * declarations — an author's `margin: 0`, unrelated selectors — untouched.
+ * Landing two independent `@page` rules in one stylesheet is ordinary CSS,
+ * not a conflict this tool has to resolve by rewriting the author's rule.
+ *
+ * Falls back to right after `<head>`, then right after `<html>`, then the
+ * very start of the document, for sources missing the more specific anchor.
+ */
+export function injectPageBox(html: string, box: PageBox): string {
+  const styleTag = `<style>\n${cssBlock(box)}\n</style>\n`;
+
+  if (HEAD_CLOSE.test(html)) {
+    return html.replace(HEAD_CLOSE, (m) => `${styleTag}${m}`);
+  }
+  if (HEAD_OPEN.test(html)) {
+    return html.replace(HEAD_OPEN, (m) => `${m}\n${styleTag}`);
+  }
+  if (HTML_OPEN.test(html)) {
+    return html.replace(HTML_OPEN, (m) => `${m}\n${styleTag}`);
+  }
+  return `${styleTag}${html}`;
 }

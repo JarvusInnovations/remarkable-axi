@@ -26,5 +26,10 @@ export default defineConfig({
         inline: ["rmapi-js"],
       },
     },
+    // Suites that spawn a real headless Chrome (render) launch a fresh
+    // process per case; the default 5s budget is comfortable in isolation
+    // but tight under the contention of a full suite run. Raising it costs
+    // nothing for the many tests that finish in milliseconds.
+    testTimeout: 20_000,
   },
 });

@@ -42,6 +42,23 @@ export const COMMAND_GROUPS: CommandGroup[] = [
           "remarkable-axi page --device paper-pro --landscape",
         ],
       },
+      {
+        usage:
+          "render <html> [--out <path>] [--device <model>] [--landscape] [--device-page]",
+        summary:
+          "Print an HTML document to a PDF sized for the target device's page box",
+        flags: [
+          "--out <path>      where to write (default: ./<name>.pdf)",
+          "--device <model>  render for a model other than the configured target",
+          "--landscape       transpose the page box",
+          "--device-page     override the document's declared @page with the device page box",
+        ],
+        examples: [
+          "remarkable-axi render flyer.html",
+          "remarkable-axi render flyer.html --out ~/Desktop/flyer.pdf",
+          "remarkable-axi render flyer.html --device paper-pro --landscape",
+        ],
+      },
     ],
   },
   {
