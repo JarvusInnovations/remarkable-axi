@@ -5,7 +5,7 @@ implementer can resolve an unspecified case the way the author would. A principl
 that governs only one command lives in that command's spec under `## Principles`;
 this file holds the ones that apply everywhere.
 
-The [AXI standard](https://github.com/JarvusInnovations/agent-skills) governs output
+The [AXI standard](https://axi.md) governs output
 format, error shape, flag validation, and help — it is assumed throughout and not
 restated here. These are the principles specific to driving a reMarkable.
 

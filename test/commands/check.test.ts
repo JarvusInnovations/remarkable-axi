@@ -163,9 +163,10 @@ describe.skipIf(gs === null)("check command", () => {
 
   test("an uncalibrated device target is caveated once, in page_box, not per finding", async () => {
     const pdf = await writePdf("uncalibrated.pdf", { size: [300, 400] });
-    const output = await check([pdf, "--device", "rm2", "--no-images"]);
+    // rm1: RM110's page box is verified on hardware and so carries no caveat.
+    const output = await check([pdf, "--device", "rm1", "--no-images"]);
     expect(String(output.page_box)).toContain("unverified");
-    const findings = output.findings as Finding[];
+    const findings = output.findings as { detail: string }[];
     for (const f of findings) {
       expect(f.detail).not.toContain("unverified");
     }

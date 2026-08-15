@@ -157,9 +157,23 @@ describe("calibration", () => {
     expect(calibration("RM102").palette).toBe("unverified");
   });
 
-  test("every unverified model is unverified on page box and ink placement", () => {
+  test("RM110's page box is verified on hardware, its ink placement is not", () => {
+    // Confirmed by the fit-to-width/fit-to-height toggle showing zero shift
+    // (issue #10). Axes land independently, so this model is genuinely part
+    // way through rather than either fully done or untouched.
+    expect(calibration("RM110").pageBox).toBe("calibrated");
+    expect(calibration("RM110").inkPlacement).toBe("unverified");
+  });
+
+  test("ink placement is only measured on the model it was measured on", () => {
     for (const model of MODELS) {
       if (model === "RM02A") continue;
+      expect(calibration(model).inkPlacement, model).toBe("unverified");
+    }
+  });
+
+  test("models nobody has measured are unverified on every axis they can have", () => {
+    for (const model of ["RM100", "RM03A", "RM102"] as const) {
       expect(calibration(model).pageBox, model).toBe("unverified");
       expect(calibration(model).inkPlacement, model).toBe("unverified");
     }
@@ -171,9 +185,14 @@ describe("calibrationLabel", () => {
     expect(calibrationLabel("RM02A")).toBe("calibrated");
   });
 
-  test("every other model reads unverified (published specs)", () => {
-    for (const model of MODELS) {
-      if (model === "RM02A") continue;
+  test("a part-way model names the axis that is real, not just 'unverified'", () => {
+    // Collapsing a partial result back to "unverified" would hide a
+    // contributor's measurement and invite someone to take it twice.
+    expect(calibrationLabel("RM110")).toBe("page box verified");
+  });
+
+  test("models nobody has measured read unverified (published specs)", () => {
+    for (const model of ["RM100", "RM03A", "RM102"] as const) {
       expect(calibrationLabel(model), model).toBe(
         "unverified (published specs)",
       );
@@ -186,9 +205,12 @@ describe("pageBoxCaveat", () => {
     expect(pageBoxCaveat("RM02A")).toBeNull();
   });
 
-  test("states the page box is unverified for every other model", () => {
-    for (const model of MODELS) {
-      if (model === "RM02A") continue;
+  test("null for RM110 too, whose page box was verified on hardware", () => {
+    expect(pageBoxCaveat("RM110")).toBeNull();
+  });
+
+  test("states the page box is unverified for the models nobody has measured", () => {
+    for (const model of ["RM100", "RM03A", "RM102"] as const) {
       expect(pageBoxCaveat(model), model).toBe(
         "page box unverified, derived from published specs",
       );

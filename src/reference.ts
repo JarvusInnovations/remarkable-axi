@@ -1,5 +1,5 @@
 export const DESCRIPTION =
-  "Send articles and documents to a reMarkable tablet and manage its cloud files";
+  "Send documents to a reMarkable tablet, design pages for its panel, and pull handwriting back off it";
 
 export interface CommandDoc {
   usage: string;

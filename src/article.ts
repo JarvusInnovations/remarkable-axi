@@ -4,6 +4,7 @@ import { Readability } from "@mozilla/readability";
 // driven by it, so the heavier dependency is the correct one here.
 import { JSDOM } from "jsdom";
 import { AxiError } from "axi-sdk-js";
+import { widestPanelWidth } from "./devices.js";
 import { buildEpub, type EpubImage } from "./epub.js";
 
 const USER_AGENT =
@@ -71,6 +72,79 @@ async function fetchWithTimeout(
 }
 
 /**
+ * One candidate rendition of an image, from `src` or a `srcset` entry.
+ *
+ * `width` is the rendition's pixel width when the descriptor states it (`800w`)
+ * or when a density descriptor (`2x`) can be multiplied by the element's
+ * declared intrinsic width. It stays null when neither is knowable, which is
+ * common enough that density has to be usable as a fallback ranking.
+ */
+interface ImageCandidate {
+  url: string;
+  width: number | null;
+  density: number;
+}
+
+function parseSrcset(srcset: string, declaredWidth: number | null): ImageCandidate[] {
+  const candidates: ImageCandidate[] = [];
+  // Split on commas that separate entries, not commas inside a URL.
+  for (const entry of srcset.split(/\s*,\s*(?=[^\s]+\s|[^\s]+$)/)) {
+    const parts = entry.trim().split(/\s+/);
+    const url = parts[0];
+    if (!url) continue;
+    const descriptor = parts[1] ?? "1x";
+
+    const w = /^(\d+(?:\.\d+)?)w$/.exec(descriptor);
+    if (w) {
+      candidates.push({ url, width: Number(w[1]), density: 1 });
+      continue;
+    }
+    const x = /^(\d+(?:\.\d+)?)x$/.exec(descriptor);
+    const density = x ? Number(x[1]) : 1;
+    candidates.push({
+      url,
+      width: declaredWidth === null ? null : Math.round(declaredWidth * density),
+      density,
+    });
+  }
+  return candidates;
+}
+
+/**
+ * Choose the rendition to ship for a panel `targetWidth` pixels across.
+ *
+ * A reMarkable renders an EPUB at its panel's own resolution, so the useful
+ * rendition is the smallest one that still covers the panel — anything
+ * narrower is upscaled and visibly soft, anything wider is bytes the device
+ * discards. Taking `src` unconditionally, as this did before, loses in both
+ * directions: sites commonly serve a small default with the real resolutions
+ * in `srcset` (a 250px thumbnail against a 1404px panel is a 5.6x upscale),
+ * while others default to something far larger than any panel.
+ *
+ * Exported for testing.
+ */
+export function pickImageCandidate(
+  candidates: ImageCandidate[],
+  targetWidth: number,
+): ImageCandidate | null {
+  if (candidates.length === 0) return null;
+
+  const sized = candidates.filter((c) => c.width !== null);
+  if (sized.length > 0) {
+    const covering = sized
+      .filter((c) => c.width! >= targetWidth)
+      .sort((a, b) => a.width! - b.width!);
+    // Smallest rendition that still covers the panel; failing that, the
+    // largest offered — the best available is still better than the default.
+    return covering[0] ?? sized.sort((a, b) => b.width! - a.width!)[0]!;
+  }
+
+  // No widths knowable anywhere: density is the only ordering left, and more
+  // pixels is the right guess for a panel denser than a typical CSS pixel.
+  return [...candidates].sort((a, b) => b.density - a.density)[0]!;
+}
+
+/**
  * Download and inline every image the article references.
  *
  * Extensions come from the response's Content-Type rather than being assumed —
@@ -81,17 +155,30 @@ async function fetchWithTimeout(
 async function inlineImages(
   document: Document,
   baseUrl: string,
+  targetWidth: number,
 ): Promise<EpubImage[]> {
   const images: EpubImage[] = [];
   const nodes = [...document.querySelectorAll("img")];
 
   await Promise.all(
     nodes.map(async (img, index) => {
-      const raw =
+      const declaredWidthAttr = Number.parseInt(img.getAttribute("width") ?? "", 10);
+      const declaredWidth = Number.isFinite(declaredWidthAttr) && declaredWidthAttr > 0
+        ? declaredWidthAttr
+        : null;
+
+      const fallbackSrc =
         img.getAttribute("src") ??
         img.getAttribute("data-src") ??
         img.getAttribute("data-original") ??
         "";
+
+      const srcset = img.getAttribute("srcset") ?? img.getAttribute("data-srcset") ?? "";
+      const candidates = [
+        ...parseSrcset(srcset, declaredWidth),
+        ...(fallbackSrc ? [{ url: fallbackSrc, width: declaredWidth, density: 1 }] : []),
+      ];
+      const raw = pickImageCandidate(candidates, targetWidth)?.url ?? "";
 
       if (!raw || raw.startsWith("data:")) {
         img.remove();
@@ -167,6 +254,7 @@ function sanitize(document: Document): void {
 export async function extractArticle(
   url: string,
   titleOverride?: string,
+  targetWidth: number = widestPanelWidth(),
 ): Promise<Article> {
   let parsedUrl: URL;
   try {
@@ -255,7 +343,7 @@ export async function extractArticle(
   );
   const contentDoc = contentDom.window.document;
   sanitize(contentDoc);
-  const images = await inlineImages(contentDoc, finalUrl);
+  const images = await inlineImages(contentDoc, finalUrl, targetWidth);
 
   // EPUB 3 content documents are XHTML, so they must be well-formed XML.
   // `innerHTML` emits HTML void elements unclosed (`<img src="…">`), which is
@@ -301,8 +389,9 @@ export function documentName(title: string): string {
 export async function articleToEpub(
   url: string,
   titleOverride?: string,
+  targetWidth?: number,
 ): Promise<{ name: string; buffer: Uint8Array; article: Article }> {
-  const article = await extractArticle(url, titleOverride);
+  const article = await extractArticle(url, titleOverride, targetWidth);
   const buffer = buildEpub({
     title: article.title,
     body: article.body,
