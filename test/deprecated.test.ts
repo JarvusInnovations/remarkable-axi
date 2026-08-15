@@ -3,6 +3,11 @@ import { AxiError } from "axi-sdk-js";
 import { send } from "../src/commands/send.js";
 import { replace } from "../src/commands/replace.js";
 import { fetch as fetchCmd } from "../src/commands/fetch.js";
+// Imported at module scope, not per test: `put` pulls in the article/EPUB
+// stack, and paying that load inside a test made it race the per-test
+// timeout on a loaded machine. `rejectKeepOld` runs before any dependency
+// call, so importing it costs nothing at run time.
+import { put } from "../src/commands/put.js";
 
 /**
  * Retired verbs never reach a dependency call — they throw synchronously with
@@ -104,7 +109,6 @@ describe("fetch (retired)", () => {
 
 describe("--keep-old (retired)", () => {
   test("put refuses --keep-old before touching the network", async () => {
-    const { put } = await import("../src/commands/put.js");
     try {
       await put(["draft.pdf", "/Papers/Draft", "--replace", "--keep-old"]);
       throw new Error("should have thrown");
@@ -122,7 +126,6 @@ describe("--keep-old (retired)", () => {
   });
 
   test("also rejects the --keep-old=value spelling", async () => {
-    const { put } = await import("../src/commands/put.js");
     await expect(
       put(["draft.pdf", "/Papers/Draft", "--keep-old=true"]),
     ).rejects.toMatchObject({
