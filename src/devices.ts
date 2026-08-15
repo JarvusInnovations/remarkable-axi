@@ -103,6 +103,24 @@ export function pageBox(
     : portrait;
 }
 
+/**
+ * Native rendering density for a model, in dots per inch.
+ *
+ * `check` rasterizes at exactly this figure — "the device's native
+ * resolution" per `specs/commands/check.md` — rather than an assumed round
+ * number, for the same reason `pageBox` derives from it instead of a
+ * hand-picked page size.
+ */
+export function dpi(model: DeviceModel): number {
+  return deviceScreens[model].dpi;
+}
+
+/** Native screen pixel dimensions for a model, e.g. `1404x1872`. */
+export function screenSize(model: DeviceModel): string {
+  const { width, height } = deviceScreens[model];
+  return `${width}x${height}`;
+}
+
 export interface DeviceSpec {
   model: DeviceModel;
   name: string;

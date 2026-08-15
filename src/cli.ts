@@ -12,6 +12,7 @@ import { page } from "./commands/page.js";
 import { put } from "./commands/put.js";
 import { get } from "./commands/get.js";
 import { render } from "./commands/render.js";
+import { check } from "./commands/check.js";
 import { mkdir, mv, rm } from "./commands/organize.js";
 import { login, doctor, setup } from "./commands/setup.js";
 import { version } from "./version.js";
@@ -56,6 +57,7 @@ export async function main(argv: string[] = process.argv.slice(2)) {
       devices,
       page,
       render,
+      check,
       mkdir,
       mv,
       rm,

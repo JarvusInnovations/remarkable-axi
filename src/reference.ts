@@ -18,10 +18,7 @@ export interface CommandGroup {
  * every `--help` block, and the generated SKILL.md region all derive from
  * this, so documentation cannot drift from the implementation.
  *
- * Groups match specs/commands/README.md. `Design` is declared even while
- * empty here — `page`, `render`, and `check` belong to sibling plans not yet
- * built — so those land as entries in an existing group rather than a new
- * section.
+ * Groups match specs/commands/README.md.
  */
 export const COMMAND_GROUPS: CommandGroup[] = [
   {
@@ -57,6 +54,22 @@ export const COMMAND_GROUPS: CommandGroup[] = [
           "remarkable-axi render flyer.html",
           "remarkable-axi render flyer.html --out ~/Desktop/flyer.pdf",
           "remarkable-axi render flyer.html --device paper-pro --landscape",
+        ],
+      },
+      {
+        usage: "check <file> [--pages <spec>] [--device <model>] [--out <dir>] [--no-images]",
+        summary:
+          "Rasterize a PDF or HTML document at the device's density and lint it against the panel",
+        flags: [
+          "--pages <spec>    pages to image, e.g. 1,3,7-9 (default: all); restricts images only, never findings",
+          "--device <model>  check against a model other than the configured target",
+          "--out <dir>       where page images are written (default: a temp directory, reported)",
+          "--no-images       findings only",
+        ],
+        examples: [
+          "remarkable-axi check flyer.pdf",
+          "remarkable-axi check flyer.html --pages 1",
+          "remarkable-axi check deck.pdf --no-images",
         ],
       },
     ],
