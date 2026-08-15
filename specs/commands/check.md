@@ -54,20 +54,25 @@ Each finding carries a page, a severity, and the measurement behind it. Severity
 | contrast | fills and text too few grey levels apart to separate on a 16-level panel |
 | type size | text below the legible floor at the device's density |
 | bleed | content falling outside the page box |
-| QR | machine-readable codes that fail to decode as rendered, and the smallest scale at which they still decode |
 
-The QR check reports a decode scale rather than a pass/fail, because the useful
-question is not whether a code decodes at full resolution but whether it decodes from
-across a room.
+Every rule here answers a question about **the panel** — will this mark survive the
+device's resolution, its grey range, its page box. That is the scope. Content-specific
+verification does not belong in it: checking that a barcode still decodes, that a chart
+is readable, that a table did not overflow are all things a caller can do on the page
+images `check` already hands back, and each one would drag in a dependency for a case
+most documents do not have.
+
+The rasterized pages are the extension point. `check` measures the medium; the caller
+measures the content.
 
 ## Output
 
 ```
 check: flyer.pdf, 1 page, rasterized at 226dpi (1404x1872)
-page_box: 447x596pt — matches RM110
+page_box: 447x596pt — matches RM110 (calibrated)
 findings[2]{page,severity,check,detail}:
   1,warn,contrast,"#a8a8a8 rules on #fff — 2 levels apart on a 16-level panel"
-  1,ok,qr,"decodes down to 98px page width (~across a room)"
+  1,warn,hairlines,"0.4pt rule — below 0.7pt resolvable at 226dpi"
 images[1]{page,path}:
   1,/tmp/…/check-p1.png
 help[1]: Run `remarkable-axi check flyer.html --pages 1` after editing to re-check

@@ -24,10 +24,16 @@ gradient-band rules that vanished when rasterized, grey text a panel cannot sepa
 a QR code with too little quiet zone to decode reliably, a page box that under-fills
 the panel.
 
-Ship the six rules in the spec — page box, hairlines, contrast, type size, bleed, QR.
+Ship the five rules in the spec — page box, hairlines, contrast, type size, bleed.
 The thresholds are the part that needs care: derive each from the device density and
 panel level count rather than picking round numbers, and report the measurement in
 every finding so a false positive is arguable rather than opaque.
+
+Every rule is about **the panel**, and that boundary is deliberate. Content-specific
+verification — does this barcode still decode, is this chart readable, did this table
+overflow — belongs to the caller, who has the rasterized pages and knows what the
+document is supposed to say. Pulling any of it in would add a dependency for a case
+most documents do not have. The page images are the extension point.
 
 `--pages` restricts *images*, never findings. A long document is checked at a handful
 of representative pages, and silently narrowing the findings to match would let a
@@ -45,7 +51,7 @@ reports whether it could run, not what it found.
 - [ ] Sub-pixel rules are flagged; a rule at the resolvable width is not
 - [ ] Low-contrast text flagged with the level separation stated
 - [ ] Content outside the page box flagged as bleed
-- [ ] A QR code reports the smallest scale at which it still decodes
+- [ ] An uncalibrated device target is caveated once, not per finding
 - [ ] A clean document says so explicitly rather than emitting an empty table
 - [ ] Findings on a document with problems do not change the exit code
 - [ ] Rasterizer absent → `MISSING_TOOL`; `doctor` reports it
@@ -60,11 +66,8 @@ justified should ship as `warn` rather than `error`.
 
 The panel's effective grey separation is a display property that has not been
 measured on hardware; the 16-level figure is from published specs. The contrast rule
-rests on it.
-
-QR detection adds an image-processing dependency for one rule. Worth checking whether
-it can be optional — the rule skipped with a note when the dependency is absent —
-rather than making every install carry it.
+rests on it, and on an uncalibrated model it rests on a figure for hardware nobody
+verified — see `specs/behaviors/device-calibration.md`.
 
 ## Notes
 

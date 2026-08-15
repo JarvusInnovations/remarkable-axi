@@ -3,6 +3,7 @@ status: planned
 depends: []
 specs:
   - specs/behaviors/page-geometry.md
+  - specs/behaviors/device-calibration.md
   - specs/commands/page.md
 issues: []
 ---
@@ -18,6 +19,7 @@ expose it with a `page` command, and build the `@page` detection that `render` a
 ## Implements
 
 - `specs/behaviors/page-geometry.md`
+- `specs/behaviors/device-calibration.md`
 - `specs/commands/page.md`
 
 ## Approach
@@ -42,6 +44,12 @@ Commands needing the box with no device target set fail with `NO_DEVICE` rather 
 assuming a model, because guessing produces documents sized for hardware the user does
 not own.
 
+Add calibration status to the model table and surface it wherever a model's numbers
+are used. Only RM02A has been measured; the other four inherit published density
+figures, and presenting all five in one uniform table implies a confidence the project
+does not have. Each unverified model gets a tracking issue carrying the procedure, so a
+contributor with that hardware can resolve it.
+
 ## Validation
 
 - [ ] `page` with a configured target reports device, screen, density, and page box
@@ -53,14 +61,21 @@ not own.
 - [ ] `@page` detection returns absent / matching / differing-with-signed-delta
 - [ ] Delta is reported in points and states which side of the box it falls on
 - [ ] Detection is exercised by one test suite consumed by both render and check
+- [ ] `devices` carries a calibration column; RM02A reads calibrated, the rest unverified
+- [ ] `page`, `render`, and `check` state the caveat once per invocation for an uncalibrated target
+- [ ] The caveat never repeats per page or per finding
+- [ ] Each unverified model has an open tracking issue carrying the procedure
 
 ## Risks / unknowns
 
-Only one model has been calibrated. The density figures for the other models come from
-published specs rather than measurement, so their page boxes are inferred — which sits
-awkwardly against the project's own principle about guessed constants. Worth marking
-uncalibrated models as such in `devices` output rather than presenting all rows with
-equal confidence.
+Four of five models are unverified, and they cannot be resolved from this repo — it
+takes someone holding the hardware. The tracking issues are the mechanism, but they
+may sit open indefinitely, so the flagging has to read as a durable statement of
+confidence rather than a temporary apology.
+
+Partial calibration needs a sensible representation: a monochrome device has no colour
+palette to establish, so its palette status is `n/a` rather than unverified, and a
+model could plausibly have a verified page box and an unverified ink transform.
 
 ## Notes
 

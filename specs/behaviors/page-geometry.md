@@ -26,6 +26,10 @@ For the 1404×1872 @ 226dpi models this yields `447 × 596pt`.
 
 `--landscape` transposes the box. Nothing else changes.
 
+The density behind that conversion is measured on one model and taken from published
+specifications on the rest, so the page box carries a calibration status wherever it
+is reported — see [device-calibration](device-calibration.md).
+
 ### Why a mismatch matters
 
 The device renders a PDF at its natural physical size at ~227dpi and pans; it does
