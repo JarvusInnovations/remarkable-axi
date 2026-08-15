@@ -1,5 +1,6 @@
 ---
-status: planned
+status: done
+pr: 20
 depends: [render-command]
 specs:
   - specs/commands/check.md
@@ -44,18 +45,26 @@ reports whether it could run, not what it found.
 
 ## Validation
 
-- [ ] `check <pdf>` rasterizes at the device density and reports page box status
-- [ ] `check <html>` renders first, then lints, in one call
-- [ ] `--pages 1,7-9` restricts images to those pages; findings still cover every page
-- [ ] `--no-images` emits findings only
-- [ ] Sub-pixel rules are flagged; a rule at the resolvable width is not
-- [ ] Low-contrast text flagged with the level separation stated
-- [ ] Content outside the page box flagged as bleed
-- [ ] An uncalibrated device target is caveated once, not per finding
-- [ ] A clean document says so explicitly rather than emitting an empty table
-- [ ] Findings on a document with problems do not change the exit code
-- [ ] Rasterizer absent → `MISSING_TOOL`; `doctor` reports it
-- [ ] Page-box detection shares render's implementation — one test suite, both commands
+- [x] `check <pdf>` rasterizes at the device density and reports page box status
+- [x] `check <html>` renders first, then lints, in one call
+- [x] `--pages` restricts images to those pages; findings still cover every page
+      — verified with a single-page selection on a two-page doc; the
+      `1,7-9` range/list syntax itself is `get.ts`'s own already-tested
+      `parsePageSelection`, reused rather than reimplemented.
+- [x] `--no-images` emits findings only
+- [x] Sub-pixel rules are flagged; a rule at the resolvable width is not
+- [x] Low-contrast text flagged with the level separation stated
+- [x] Content outside the page box flagged as bleed
+- [x] An uncalibrated device target is caveated once, not per finding
+- [x] A clean document says so explicitly rather than emitting an empty table
+- [x] Findings on a document with problems do not change the exit code
+      — checked the actual process exit code (`0`) via the built CLI, not
+      just that the command function doesn't throw.
+- [x] Rasterizer absent → `MISSING_TOOL`; `doctor` reports it
+- [x] Page-box detection shares render's implementation — one test suite, both commands
+      — both commands call the same `detectPageBox`/`describeDelta`
+      (`src/page.ts`); confirmed the two command-level test suites produce
+      identical delta wording for the same declared-vs-device case.
 
 ## Risks / unknowns
 
@@ -71,4 +80,59 @@ verified — see `specs/behaviors/device-calibration.md`.
 
 ## Notes
 
+Measurement architecture ended up raster-based rather than PDF-content-stream-based
+for hairlines/contrast/type-size, a pivot made mid-implementation after two findings
+during calibration:
+
+- Ghostscript's default (non-antialiased) rasterization paints any touched pixel as
+  fully opaque regardless of true coverage — a 0.1pt and a 2pt rule render
+  indistinguishably by intensity. `-dGraphicsAlphaBits=4 -dTextAlphaBits=4` fixes
+  this; integrating the antialiased coverage across a candidate rule's thickness
+  recovers true sub-pixel width (calibrated against eleven synthetic rules from
+  0.1pt-2pt — see `rasterize.ts`'s doc comment).
+- A pure PDF-content-stream reading (line widths, fill colors, `Tf` sizes) would have
+  missed the single most realistic case check.md itself calls out — a scanned
+  document, which is one full-page embedded image with no vector content at all.
+  Raster analysis handles vector PDFs, HTML-rendered PDFs, and scanned PDFs
+  uniformly, since it measures what would actually reach the panel rather than what
+  a producer declared.
+
+Text-line detection (shared by `type size` and `contrast`) recovers each line's
+visible height from per-row edge-transition density — no font, no glyph
+segmentation. A real bug surfaced and was fixed during fixture testing: a lone
+descender ("y", "g") briefly falling below the transition threshold split one visual
+line into a normal band plus a tiny fragment that misread as its own much-smaller
+"line" (a 17pt heading's descender measured 1.9pt on its own). Fixed by merging
+adjacent bands whose gap is small relative to the taller one — see the doc comment
+above `mergeAdjacentBands` in `rules.ts`.
+
+Also fixed during testing: an initial absolute-brightness "ink" cutoff (anything
+under grey level 128) silently missed genuinely low-contrast text, since very faint
+text never gets that dark — exactly the case `contrast` exists to catch. Replaced
+with a band-local percentile split (5th/95th percentile of the band's own pixel
+values) that adapts to whatever contrast is actually present.
+
 ## Follow-ups
+
+- None (scope decision, documented in `geometry.ts`): `bleed` only compares a page's
+  CropBox against its MediaBox. It does not detect raster content overflowing the
+  MediaBox itself when no CropBox is declared — a case that would require content
+  extending past a page's own canvas, which well-formed PDF producers (including this
+  tool's own `render`) don't produce. No urgency; revisit if a real document surfaces
+  the gap.
+- None (unverified, stated in code and in this PR): the antialiased-coverage
+  calibration numbers in `rasterize.ts` and the `AA_BIAS_PX` correction in `rules.ts`
+  were measured against this machine's Ghostscript 10.02.1. Behavior on other
+  Ghostscript versions/builds is unverified.
+- None (pre-existing constraint, not introduced here): `doctor`'s new `ghostscript`
+  field has no test isolating the unpaired branch specifically, because
+  `src/auth.ts` resolves its token path from `homedir()` at module load rather than
+  per call, so a per-test `HOME` override can't isolate it — the existing `chrome`
+  field has the same gap. `test/commands/setup.test.ts` asserts the field's presence
+  in whichever branch the environment naturally reaches instead.
+- None (unverified per `specs/behaviors/device-calibration.md`, by design): the
+  `contrast` rule's 16-level premise and the `type size` rule's stroke-to-height
+  ratio are typographic/display approximations, not hardware measurements — both
+  ship `warn` only, and resolving them isn't tracked as a fresh device-calibration
+  axis distinct from the existing page-box/ink-placement/palette ones (issues
+  #10-#13).
