@@ -7,14 +7,21 @@ render <html> [--out <path>]
 ```
 
 Convert an HTML document to a PDF sized for the target device. `--out` is a file
-path, defaulting to `./<name>.pdf` beside the source. PDF is the only output — the
-flag chooses *where*, never *what*.
+path; by default the PDF is written **beside the source**, as `<name>.pdf` in the
+source's own directory — not in the working directory. Rendering a document from
+elsewhere in the tree should leave its output with it rather than scattering PDFs
+wherever the command happened to be run.
+
+(This differs from `get`, which defaults to the working directory. `get` pulls from
+the cloud, where there is no "beside" to write next to.)
+
+PDF is the only output — the flag chooses *where*, never *what*.
 
 ## Flags
 
 | Flag | Effect |
 | --- | --- |
-| `--out <path>` | where to write (default: `./<name>.pdf`) |
+| `--out <path>` | where to write (default: `<name>.pdf` beside the source) |
 | `--device <model>` | render for a model other than the configured target |
 | `--landscape` | transpose the page box |
 | `--device-page` | override the document's declared `@page` with the device page box |
