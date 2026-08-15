@@ -13,6 +13,15 @@ const CACHE_FILE = join(CONFIG_DIR, "cache.json");
 /** Absolute path of the cache file, for diagnostics. */
 export const cachePath = CACHE_FILE;
 
+/**
+ * Root-hash sentinel meaning "these entries are useful but unvalidated".
+ *
+ * Root hashes are hex, so this can never collide with a real one, and any
+ * comparison against the live root fails — which is the point. Written by
+ * `recordMutation`; see the reasoning there.
+ */
+const UNVALIDATED = "unvalidated";
+
 interface CacheFile {
   version: 1;
   /**
@@ -221,27 +230,39 @@ export interface Mutation {
 }
 
 /**
- * Update the cache from a mutation's own result rather than discarding it.
+ * Fold a mutation this tool just performed into the cached entries, and mark
+ * the cache as needing reconciliation.
  *
- * A `put`, `mv`, or `rm` already knows exactly what it changed, so folding
- * that into the cache costs one more `getRootHash()` call — flat, not
- * proportional to account size — and leaves the next read a one-request
- * cache hit instead of forcing a rebuild.
+ * A `put`, `mv`, or `rm` already knows exactly what it changed, so keeping
+ * those entries saves the next read from refetching their metadata.
+ *
+ * What it deliberately does *not* do is claim the cache is current. Writing
+ * the post-mutation root hash here would be unsound: mutations are
+ * root-rewrites guarded by a generation counter, so a concurrent write from
+ * the device or another client causes ours to rebase onto theirs. The root
+ * hash we would read back therefore covers their change too — which is not
+ * in our entries. The next read would see a matching hash, call it a cache
+ * hit, and serve a tree silently missing their document.
+ *
+ * So the cache is left deliberately unvalidated. The next `loadTree` takes
+ * the delta path and reconciles, which costs one `listRefs` — flat, not
+ * proportional to account size — and refetches metadata only for what
+ * genuinely moved, which after our own bookkeeping is usually nothing. The
+ * expensive part was always the per-document fetches, and those are still
+ * avoided.
  *
  * Best-effort throughout: this is a local optimization, not the source of
  * truth, so any failure here is silent and simply gives up the speedup for
  * the next call rather than the mutation that already succeeded.
  */
 export async function recordMutation(
-  api: RemarkableApi,
+  _api: RemarkableApi,
   mutation: Mutation,
 ): Promise<void> {
   try {
     const account = await currentAccount();
     const cached = await readCacheFile(account);
     if (!cached) return; // nothing to keep current; the next read builds fresh
-
-    const [rootHash, generation] = await api.raw.getRootHash();
 
     const removeIds = new Set(mutation.remove ?? []);
     const upsertById = new Map((mutation.upsert ?? []).map((e) => [e.id, e]));
@@ -253,8 +274,10 @@ export async function recordMutation(
     await writeCacheFile({
       version: 1,
       account,
-      rootHash,
-      generation,
+      // Never matches a real root hash, so the next read reconciles rather
+      // than trusting entries we assembled locally. See above.
+      rootHash: UNVALIDATED,
+      generation: cached.generation,
       updatedAt: new Date().toISOString(),
       entries,
     });

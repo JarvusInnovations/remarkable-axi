@@ -241,7 +241,7 @@ describe("loadTree", () => {
 });
 
 describe("recordMutation", () => {
-  test("a mutation's own result keeps the cache current without a refetch", async () => {
+  test("a mutation's own result is folded in, sparing its metadata refetch", async () => {
     const items = [document("a", "One")];
     const refs = items.map(({ id }) => ({ id, hash: `hash-${id}` }));
     const first = fakeApi({ rootHash: "root-1", generation: 1, refs, items });
@@ -261,11 +261,12 @@ describe("recordMutation", () => {
 
     const mutated = fakeApi({ rootHash: "root-2", generation: 2, refs: [], items: [] });
     await recordMutation(mutated.api, { upsert: [putEntry] });
-    expect(mutated.calls.getRootHash).toBe(1);
-    expect(mutated.calls.listRefs).toBe(0);
+    // Folds the entry in without asking the cloud anything at all.
+    expect(mutated.calls).toEqual({ getRootHash: 0, listRefs: 0, getEntries: 0 });
 
-    // The next load sees the generation `recordMutation` just wrote, so it is
-    // a cache hit that already reflects the upload — no refetch triggered.
+    // The next load reconciles rather than trusting locally-assembled
+    // entries. What it saves is the per-document metadata fetch for the
+    // entry we just wrote — which is where the real cost always was.
     const third = fakeApi({
       rootHash: "root-2",
       generation: 2,
@@ -274,9 +275,49 @@ describe("recordMutation", () => {
     });
     const result = await loadTree(third.api);
 
-    expect(result.source).toBe("cache");
+    expect(result.source).toBe("refreshed");
     expect(result.entries.map((e) => e.visibleName).sort()).toEqual(["One", "Two"]);
-    expect(third.calls).toEqual({ getRootHash: 1, listRefs: 0, getEntries: 0 });
+    expect(third.calls).toEqual({ getRootHash: 1, listRefs: 1, getEntries: 0 });
+  });
+
+  test("reconciling after a mutation picks up a concurrent write", async () => {
+    const items = [document("a", "One")];
+    const refs = items.map(({ id }) => ({ id, hash: `hash-${id}` }));
+    const first = fakeApi({ rootHash: "root-1", generation: 1, refs, items });
+    await loadTree(first.api);
+
+    const ours = {
+      id: "b",
+      hash: "hash-b",
+      type: "DocumentType",
+      fileType: "pdf",
+      visibleName: "Ours",
+      lastModified: "1700000001000",
+      lastOpened: "",
+      pinned: false,
+      parent: "",
+    } as Entry;
+
+    const mutated = fakeApi({ rootHash: "root-2", generation: 2, refs: [], items: [] });
+    await recordMutation(mutated.api, { upsert: [ours] });
+
+    // Another client wrote "Theirs" concurrently, so our mutation rebased
+    // onto it and the live root covers a document we never saw. Recording
+    // the post-mutation root hash here would have made the next read a
+    // cache hit serving a tree silently missing it.
+    const third = fakeApi({
+      rootHash: "root-3",
+      generation: 3,
+      refs: [...refs, { id: "b", hash: "hash-b" }, { id: "c", hash: "hash-c" }],
+      items: [...items, { id: "b" }, document("c", "Theirs")],
+    });
+    const result = await loadTree(third.api);
+
+    expect(result.entries.map((e) => e.visibleName).sort()).toEqual([
+      "One",
+      "Ours",
+      "Theirs",
+    ]);
   });
 
   test("a removal drops the entry from the cache", async () => {
@@ -296,8 +337,9 @@ describe("recordMutation", () => {
     });
     const result = await loadTree(third.api);
 
-    expect(result.source).toBe("cache");
+    expect(result.source).toBe("refreshed");
     expect(result.entries.map((e) => e.visibleName)).toEqual(["One"]);
+    expect(third.calls.getEntries).toBe(0); // nothing moved; the fold-in held
   });
 
   test("does nothing when there is no cache to update yet", async () => {
