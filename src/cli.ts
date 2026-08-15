@@ -9,9 +9,6 @@ import { home } from "./commands/home.js";
 import { ls, find } from "./commands/browse.js";
 import { devices } from "./commands/devices.js";
 import { page } from "./commands/page.js";
-import { fetch as fetchCmd } from "./commands/fetch.js";
-import { send } from "./commands/send.js";
-import { replace } from "./commands/replace.js";
 import { put } from "./commands/put.js";
 import { get } from "./commands/get.js";
 import { mkdir, mv, rm } from "./commands/organize.js";
@@ -57,9 +54,6 @@ export async function main(argv: string[] = process.argv.slice(2)) {
       find,
       devices,
       page,
-      fetch: fetchCmd,
-      send,
-      replace,
       mkdir,
       mv,
       rm,

@@ -7,10 +7,19 @@ import {
 } from "../src/reference.js";
 
 describe("COMMAND_GROUPS", () => {
-  test("declares an empty Design group so a sibling command slots in cleanly", () => {
-    const design = COMMAND_GROUPS.find((g) => g.group === "Design");
-    expect(design).toBeDefined();
-    expect(design?.commands).toEqual([]);
+  test("Design leads the surface, holding the authoring commands", () => {
+    expect(COMMAND_GROUPS[0]?.group).toBe("Design");
+    expect(COMMAND_GROUPS[0]?.commands.map((c) => c.usage)).toContain(
+      "page [--device <model>] [--landscape] [--css]",
+    );
+  });
+
+  test("every declared group is non-empty", () => {
+    // The renderer skips empty groups rather than printing a bare header, but
+    // an empty group on the real surface means a command was dropped.
+    for (const group of COMMAND_GROUPS) {
+      expect(group.commands.length).toBeGreaterThan(0);
+    }
   });
 
   test("put and get live in Move, source first and destination last", () => {
@@ -29,9 +38,11 @@ describe("COMMAND_GROUPS", () => {
 });
 
 describe("renderTopLevelHelp", () => {
-  test("does not crash on the empty Design group, and omits it", () => {
+  test("prints every group, Design first", () => {
     const help = renderTopLevelHelp();
-    expect(help).not.toContain("Design:");
+    expect(help).toContain("Design:");
+    expect(help.indexOf("Design:")).toBeLessThan(help.indexOf("Move:"));
+    expect(help).toContain("page [--device <model>] [--landscape] [--css]");
     expect(help).toContain("Move:");
     expect(help).toContain("put <src> <dest>");
     expect(help).toContain("get <path> [<dest>]");
