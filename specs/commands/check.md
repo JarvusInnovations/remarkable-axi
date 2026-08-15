@@ -88,9 +88,9 @@ worse than having no linter — see
 ```
 check: flyer.pdf, 1 page, rasterized at 226dpi (1404x1872)
 page_box: 447x596pt — matches RM110 (calibrated)
-findings[2]{page,severity,check,detail}:
-  1,warn,contrast,"#a8a8a8 rules on #fff — 2 levels apart on a 16-level panel"
-  1,warn,hairlines,"0.4pt rule — below 0.7pt resolvable at 226dpi"
+findings[2]{pages,severity,check,detail}:
+  "1-10",warn,contrast,"#a8a8a8 rules on #fff — 2 levels apart on a 16-level panel"
+  "1,4-9",warn,hairlines,"0.4pt rule — below 0.7pt resolvable at 226dpi"
 images[1]{page,path}:
   1,/tmp/…/check-p1.png
 help[1]: Run `remarkable-axi check flyer.html --pages 1` after editing to re-check
@@ -98,6 +98,22 @@ help[1]: Run `remarkable-axi check flyer.html --pages 1` after editing to re-che
 
 A document with nothing to report says so explicitly rather than emitting an empty
 findings table.
+
+### One row per distinct problem, not per page
+
+A finding carries the **pages** it was seen on, not a single page, and identical
+findings — same check, same severity, same measurement — collapse into one row.
+
+Page geometry belongs to the document and a template rule repeats on every page that
+uses the template, so reporting either per page multiplies one fact by the page count.
+A real ten-page deck produced twenty-one findings describing three problems, the
+page-box mismatch ten times over. That is the same noise the thresholds above were
+tuned to avoid, arriving through a different door: a finding an agent has already read
+nine times is one it learns to skip.
+
+Collapsing loses nothing — every page a finding applies to is still named, so the
+coverage guarantee `--pages` must not weaken is unaffected. What changes is that the
+finding count reflects distinct problems rather than page count.
 
 ## Relationship to the rest of the surface
 

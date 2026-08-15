@@ -62,14 +62,53 @@ export async function client(): Promise<RemarkableApi> {
     // output, no error, and no exit.
     return withTimeout(await remarkable(token), timeoutMs());
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new AxiError(
-      `authentication failed: ${message}`,
-      "AUTH_FAILED",
+    throw classifyClientError(error);
+  }
+}
+
+/**
+ * Translate a failure to open a client into the cause the caller can act on.
+ *
+ * Not every failure to exchange the device token is an *auth* failure. The
+ * cloud rate-limits token exchange, and a 429 used to surface here as
+ * "authentication failed" suggesting a re-pair — advice that burns a pairing
+ * code and fixes nothing, because the condition clears on its own. Flattening
+ * distinct causes into the scariest one is precisely what AXI 6 forbids:
+ * translate the actionable meaning, discard the noise.
+ *
+ * Exported for testing; the classification is pure so it needs no network.
+ */
+export function classifyClientError(error: unknown): AxiError {
+  const message = error instanceof Error ? error.message : String(error);
+
+  if (/\b429\b|too many requests|rate.?limit/i.test(message)) {
+    return new AxiError(
+      `reMarkable cloud rate limit reached: ${message}`,
+      "RATE_LIMITED",
       [
-        "The device token may have been revoked or expired",
-        "Run `remarkable-axi login <code>` with a fresh code from https://my.remarkable.com/device/desktop/connect",
+        "The pairing is fine — the cloud is throttling token exchange",
+        "Wait a minute or two and run the same command again",
       ],
     );
   }
+
+  if (
+    /\b5\d\d\b|econnreset|etimedout|enotfound|eai_again|socket hang up|network|timed out/i.test(
+      message,
+    )
+  ) {
+    return new AxiError(
+      `reMarkable cloud unreachable: ${message}`,
+      "CLOUD_UNREACHABLE",
+      [
+        "The pairing is fine — the cloud did not answer",
+        "Check connectivity and retry; `remarkable-axi doctor` reports reachability",
+      ],
+    );
+  }
+
+  return new AxiError(`authentication failed: ${message}`, "AUTH_FAILED", [
+    "The device token may have been revoked or expired",
+    "Run `remarkable-axi login <code>` with a fresh code from https://my.remarkable.com/device/desktop/connect",
+  ]);
 }

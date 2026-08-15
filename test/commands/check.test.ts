@@ -119,8 +119,25 @@ describe.skipIf(gs === null)("check command", () => {
     const images = output.images as { page: number; path: string }[];
     expect(images.map((i) => i.page)).toEqual([1]);
 
-    const findings = output.findings as Finding[];
-    expect(findings.some((f) => f.page === 2 && f.check === "page box")).toBe(true);
+    // The invariant: restricting images must never narrow the findings.
+    // Page 2 was not imaged, but its page-box mismatch is still reported.
+    const findings = output.findings as { pages: string; check: string }[];
+    expect(findings.some((f) => f.pages.includes("2") && f.check === "page box")).toBe(true);
+  });
+
+  test("a finding repeated across pages collapses into one row listing them", async () => {
+    const doc = await PDFDocument.create();
+    for (let i = 0; i < 4; i++) doc.addPage([300, 400]); // all mismatched alike
+    const path = join(dir, "repeating.pdf");
+    await writeFile(path, await doc.save());
+
+    const output = await check([path, "--device", "paper-pro", "--no-images"]);
+    const findings = output.findings as { pages: string; check: string }[];
+    const pageBox = findings.filter((f) => f.check === "page box");
+
+    // One document-level fact, reported once — not once per page.
+    expect(pageBox).toHaveLength(1);
+    expect(pageBox[0]!.pages).toBe("1-4");
   });
 
   test("--out writes images to the given directory", async () => {
