@@ -8,6 +8,7 @@ import { buildTree, duplicatePaths } from "../paths.js";
 import { discardCache, loadTree } from "../cache.js";
 import { age } from "../time.js";
 import { setupDevice } from "./devices.js";
+import { findChrome } from "../chrome.js";
 
 
 const CONNECT_URL = "https://my.remarkable.com/device/desktop/connect";
@@ -65,11 +66,21 @@ export async function doctor(args: string[]): Promise<Output> {
   const token = await readToken();
   const fromEnv = Boolean(process.env.REMARKABLE_TOKEN?.trim());
 
+  // `render` (and, later, `check`) is unusable without Chrome, and it is an
+  // external install this tool cannot verify any other way — so `doctor`
+  // reports it regardless of pairing state, the same as pairing is reported
+  // regardless of whether Chrome is installed.
+  const chromeInfo = await findChrome();
+  const chrome = chromeInfo
+    ? `found (${chromeInfo.version})`
+    : "not found — required for `render`; install Chrome or Chromium";
+
   if (!token) {
     return {
       doctor: {
         paired: "no",
         token: `not found at ${collapseHome(tokenPath)}`,
+        chrome,
       },
       help: [
         `Get an 8-character code from ${CONNECT_URL}`,
@@ -117,6 +128,7 @@ export async function doctor(args: string[]): Promise<Output> {
         // Surfaced rather than hidden: a listing that quietly drops items
         // reads as complete when it isn't.
         ...(result.unreadable > 0 ? { unreadable: result.unreadable } : {}),
+        chrome,
         duplicates: dups.length,
         ...(dups.length > 0
           ? {
@@ -150,6 +162,7 @@ export async function doctor(args: string[]): Promise<Output> {
           : collapseHome(tokenPath),
         reachable: "no",
         error: message,
+        chrome,
       },
       help: [
         "Check network connectivity to the reMarkable cloud",

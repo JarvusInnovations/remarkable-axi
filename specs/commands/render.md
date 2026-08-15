@@ -7,14 +7,21 @@ render <html> [--out <path>]
 ```
 
 Convert an HTML document to a PDF sized for the target device. `--out` is a file
-path, defaulting to `./<name>.pdf` beside the source. PDF is the only output — the
-flag chooses *where*, never *what*.
+path; by default the PDF is written **beside the source**, as `<name>.pdf` in the
+source's own directory — not in the working directory. Rendering a document from
+elsewhere in the tree should leave its output with it rather than scattering PDFs
+wherever the command happened to be run.
+
+(This differs from `get`, which defaults to the working directory. `get` pulls from
+the cloud, where there is no "beside" to write next to.)
+
+PDF is the only output — the flag chooses *where*, never *what*.
 
 ## Flags
 
 | Flag | Effect |
 | --- | --- |
-| `--out <path>` | where to write (default: `./<name>.pdf`) |
+| `--out <path>` | where to write (default: `<name>.pdf` beside the source) |
 | `--device <model>` | render for a model other than the configured target |
 | `--landscape` | transpose the page box |
 | `--device-page` | override the document's declared `@page` with the device page box |
@@ -54,7 +61,14 @@ rendered:
 help[1]: Run `remarkable-axi check ./flyer.pdf` to lint it for the panel
 ```
 
-`page:` states whether the box was injected, matched, or honored-with-a-delta.
+`page:` states whether the box was injected, matched, honored-with-a-delta, or
+overridden. `--device-page` on a differing declaration produces a fourth
+disposition — the device box is used, and the declaration it replaced is reported
+with its delta so the override is never silent:
+
+```
+page: 447x596pt (overridden; declared 612x792pt, 165pt wider, 196pt taller)
+```
 
 ## Failure
 
