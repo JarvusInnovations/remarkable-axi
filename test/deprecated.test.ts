@@ -119,7 +119,7 @@ describe("--keep-old (retired)", () => {
         "--keep-old is retired; it left two documents at one path",
       );
       expect(axi.suggestions).toEqual([
-        "to carry annotations onto the new version, use --keep-ink",
+        "to save the annotated version first, use `remarkable-axi get <path> --overlay <file>.pdf`",
         "to keep the old version as a separate document, give it a distinct --name",
       ]);
     }
@@ -131,5 +131,28 @@ describe("--keep-old (retired)", () => {
     ).rejects.toMatchObject({
       message: "--keep-old is retired; it left two documents at one path",
     });
+  });
+});
+
+describe("--keep-ink (not shipped)", () => {
+  test("put refuses --keep-ink before touching the network", async () => {
+    await expect(
+      put(["draft.pdf", "/Papers/Draft", "--replace", "--keep-ink"]),
+    ).rejects.toMatchObject({
+      code: "UNKNOWN_FLAG",
+      message:
+        "--keep-ink is not implemented; the write path to port ink onto a replacement could not be verified as reliable",
+      suggestions: [
+        "save the annotated version first — remarkable-axi get <path> --overlay <file>.pdf",
+        "then replace and let the tablet copy's ink go — remarkable-axi put <src> <dest> --replace --discard-ink",
+        "https://github.com/JarvusInnovations/remarkable-axi/issues/21",
+      ],
+    });
+  });
+
+  test("also rejects the --keep-ink=value spelling", async () => {
+    await expect(
+      put(["draft.pdf", "/Papers/Draft", "--keep-ink=true"]),
+    ).rejects.toMatchObject({ code: "UNKNOWN_FLAG" });
   });
 });

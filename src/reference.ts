@@ -82,13 +82,15 @@ export const COMMAND_GROUPS: CommandGroup[] = [
         summary:
           "Send a local PDF/EPUB or a URL to the tablet — source first, destination last",
         flags: [
-          "--name <name>  document name shown on the device (default: derived from source)",
-          "--replace      swap the contents of the document already at <dest>",
+          "--name <name>    document name shown on the device (default: derived from source)",
+          "--replace        swap the contents of the document already at <dest>",
+          "--discard-ink    with --replace, proceed even though the target carries ink",
         ],
         examples: [
           "remarkable-axi put ~/Downloads/paper.pdf /Papers",
           'remarkable-axi put "https://example.com/post" /Articles',
           "remarkable-axi put draft-v2.pdf /Papers/Draft --replace",
+          "remarkable-axi put draft-v2.pdf /Papers/Draft --replace --discard-ink",
         ],
       },
       {

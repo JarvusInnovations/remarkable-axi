@@ -1,7 +1,7 @@
 import { extname, basename } from "node:path";
 import { readFile, stat } from "node:fs/promises";
 import { AxiError } from "axi-sdk-js";
-import type { RemarkableApi } from "rmapi-js";
+import type { ItemRef, RemarkableApi } from "rmapi-js";
 import type { Output } from "../output.js";
 import { humanSize } from "../output.js";
 import { client } from "../auth.js";
@@ -37,8 +37,32 @@ function rejectKeepOld(args: string[]): void {
     "--keep-old is retired; it left two documents at one path",
     "UNKNOWN_FLAG",
     [
-      "to carry annotations onto the new version, use --keep-ink",
+      "to save the annotated version first, use `remarkable-axi get <path> --overlay <file>.pdf`",
       "to keep the old version as a separate document, give it a distinct --name",
+    ],
+  );
+}
+
+/**
+ * `--keep-ink` is designed (specs/behaviors/ink-preservation.md) but not
+ * shipped: porting a superseded document's strokes onto a freshly uploaded
+ * replacement needs a write path this tool could not verify as reliable
+ * without live-device testing, which is out of scope here. See
+ * https://github.com/JarvusInnovations/remarkable-axi/issues/21. Rejected up
+ * front, before any network call, so an agent gets a targeted answer instead
+ * of the generic UNKNOWN_FLAG list.
+ */
+function rejectKeepInk(args: string[]): void {
+  if (!args.some((a) => a === "--keep-ink" || a.startsWith("--keep-ink="))) {
+    return;
+  }
+  throw new AxiError(
+    "--keep-ink is not implemented; the write path to port ink onto a replacement could not be verified as reliable",
+    "UNKNOWN_FLAG",
+    [
+      "save the annotated version first — remarkable-axi get <path> --overlay <file>.pdf",
+      "then replace and let the tablet copy's ink go — remarkable-axi put <src> <dest> --replace --discard-ink",
+      "https://github.com/JarvusInnovations/remarkable-axi/issues/21",
     ],
   );
 }
@@ -124,6 +148,49 @@ function backupName(name: string): string {
   return `${name} (replaced ${stamp})`;
 }
 
+/** How much ink a `--replace` target carries, when it carries any. */
+interface InkSummary {
+  inkedPages: number;
+  totalPages: number;
+}
+
+/**
+ * Whether a document carries ink, and on how many of its pages — see
+ * specs/behaviors/ink-preservation.md#warning-before-replacing-inked-documents.
+ *
+ * Answered from the document's own entry list: per-page `.rm` files exist
+ * only for pages that have been drawn on, so counting entries whose id ends
+ * `.rm` is a page count with no page content downloaded. That one request
+ * covers the common case (no ink) outright. The total page count needed to
+ * report "N of M" costs a second, equally small `.content` read — paid only
+ * when there is ink to report on, since the happy path never needs it.
+ */
+async function detectInk(
+  api: RemarkableApi,
+  ref: ItemRef,
+): Promise<InkSummary | null> {
+  const { entries } = await api.raw.getEntries(ref);
+  const inkedPages = entries.filter((e) => e.id.endsWith(".rm")).length;
+  if (inkedPages === 0) return null;
+
+  const contentEntry = entries.find((e) => e.id.endsWith(".content"));
+  let totalPages = inkedPages;
+  if (contentEntry) {
+    try {
+      const content = (await api.raw.getContent(contentEntry)) as {
+        pageCount?: number;
+      };
+      if (typeof content.pageCount === "number" && content.pageCount > 0) {
+        totalPages = content.pageCount;
+      }
+    } catch {
+      // Content unreadable: still refuse, just without the "of N" figure —
+      // the inked count alone already answers the question that matters.
+    }
+  }
+  return { inkedPages, totalPages };
+}
+
 /**
  * Rename the superseded document on its way to trash so it is distinguishable
  * from the document that replaced it, then trash it. Best-effort: the new
@@ -149,10 +216,11 @@ async function trashSuperseded(
 
 export async function put(args: string[]): Promise<Output> {
   rejectKeepOld(args);
+  rejectKeepInk(args);
 
   const parsed = parseFlags("put", args, {
     value: ["--name"],
-    boolean: ["--replace"],
+    boolean: ["--replace", "--discard-ink"],
   });
 
   const src = requirePositional(
@@ -202,6 +270,23 @@ export async function put(args: string[]): Promise<Output> {
       throw new AxiError(`not a document: ${destPath}`, "USAGE", [
         "put --replace swaps a document's contents; it cannot replace a folder",
       ]);
+    }
+
+    if (!bool(parsed, "--discard-ink")) {
+      const ink = await detectInk(api, {
+        id: old.entry.id,
+        hash: old.entry.hash,
+      });
+      if (ink) {
+        throw new AxiError(
+          `${destPath} has ink on ${ink.inkedPages} of ${ink.totalPages} pages; --replace would discard it`,
+          "HAS_INK",
+          [
+            `save it separately first — remarkable-axi get ${destPath} --overlay <file>.pdf`,
+            `or replace and let it go — remarkable-axi put ${src} ${destPath} --replace --discard-ink`,
+          ],
+        );
+      }
     }
 
     const name = documentName(nameOverride || old.entry.visibleName);
