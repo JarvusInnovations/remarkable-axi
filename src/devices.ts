@@ -175,12 +175,19 @@ export interface Calibration {
  * Per-model calibration, tracked on the three independent axes defined in
  * `specs/behaviors/device-calibration.md`.
  *
- * Only RM02A (Paper Pro) has been measured. RM110 and RM100 are documented
- * upstream as monochrome-only, so their palette is `n/a` rather than
- * unverified; RM03A and RM102 carry colour pens whose mapping has not been
- * established, so theirs is `unverified`. Resolving any of the unverified
- * axes is tracked in issues #10 (RM110), #11 (RM100), #12 (RM03A), #13
- * (RM102) — see the procedure there before changing this table.
+ * Only RM02A (Paper Pro) has been measured. RM110 and RM100 are monochrome
+ * hardware, so their palette is `n/a` rather than unverified — no mapping
+ * will ever be owed. RM03A carries colour pens whose mapping has not been
+ * established.
+ *
+ * RM102 is `unverified` for a weaker reason: it is not known here whether
+ * that model offers colour pens at all, and establishing that is the first
+ * step of its calibration. The status records that a determination is owed,
+ * not that a known palette went unmeasured.
+ *
+ * Resolving any unverified axis is tracked in issues #10 (RM110), #11
+ * (RM100), #12 (RM03A), #13 (RM102) — see the procedure there before
+ * changing this table.
  */
 const CALIBRATION: Record<DeviceModel, Calibration> = {
   RM02A: { pageBox: "calibrated", inkPlacement: "calibrated", palette: "calibrated" },
