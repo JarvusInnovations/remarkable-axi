@@ -3,10 +3,13 @@ import type { Output } from "../output.js";
 import { collapseHome } from "../output.js";
 import { register } from "rmapi-js";
 import { client, readToken, tokenPath, writeToken } from "../auth.js";
-import { parseFlags, requirePositional } from "../flags.js";
-import { buildTree } from "../paths.js";
-import { listEntries } from "../entries.js";
+import { bool, parseFlags, requirePositional } from "../flags.js";
+import { buildTree, duplicatePaths } from "../paths.js";
+import { discardCache, loadTree } from "../cache.js";
+import { age } from "../time.js";
 import { setupDevice } from "./devices.js";
+import { findChrome } from "../chrome.js";
+import { findGhostscript } from "../gs.js";
 
 
 const CONNECT_URL = "https://my.remarkable.com/device/desktop/connect";
@@ -59,16 +62,32 @@ export async function login(args: string[]): Promise<Output> {
 }
 
 export async function doctor(args: string[]): Promise<Output> {
-  parseFlags("doctor", args, {});
+  const parsed = parseFlags("doctor", args, { boolean: ["--rebuild"] });
 
   const token = await readToken();
   const fromEnv = Boolean(process.env.REMARKABLE_TOKEN?.trim());
+
+  // `render` is unusable without Chrome, and `check` is unusable without
+  // Ghostscript, and both are external installs this tool cannot verify any
+  // other way — so `doctor` reports them regardless of pairing state, the
+  // same as pairing is reported regardless of whether either is installed.
+  const chromeInfo = await findChrome();
+  const chrome = chromeInfo
+    ? `found (${chromeInfo.version})`
+    : "not found — required for `render`; install Chrome or Chromium";
+
+  const gsInfo = await findGhostscript();
+  const ghostscript = gsInfo
+    ? `found (${gsInfo.version})`
+    : "not found — required for `check`; install Ghostscript";
 
   if (!token) {
     return {
       doctor: {
         paired: "no",
         token: `not found at ${collapseHome(tokenPath)}`,
+        chrome,
+        ghostscript,
       },
       help: [
         `Get an 8-character code from ${CONNECT_URL}`,
@@ -77,17 +96,27 @@ export async function doctor(args: string[]): Promise<Output> {
     };
   }
 
+  // Discarding and rebuilding is the only supported repair for a cache
+  // suspected wrong — there is no partial-invalidation escape hatch.
+  if (bool(parsed, "--rebuild")) await discardCache();
+
   const started = Date.now();
   try {
     const api = await client();
-    const { entries, unreadable } = await listEntries(api);
-    const tree = buildTree(entries);
+    const result = await loadTree(api);
+    const tree = buildTree(result.entries);
     const documents = [...tree.byId.values()].filter(
       (n) => n.entry.type === "DocumentType",
     ).length;
     const folders = [...tree.byId.values()].filter(
       (n) => n.entry.type === "CollectionType",
     ).length;
+    const reachable = result.source !== "stale";
+
+    // Duplicated paths are detected here, standing apart from write-time
+    // prevention, because they arrive from the device and other clients
+    // regardless of what this tool does — see specs/behaviors/path-uniqueness.md.
+    const dups = [...duplicatePaths(tree).entries()];
 
     return {
       doctor: {
@@ -95,17 +124,43 @@ export async function doctor(args: string[]): Promise<Output> {
         token: fromEnv
           ? "REMARKABLE_TOKEN (environment)"
           : collapseHome(tokenPath),
-        reachable: "yes",
+        reachable: reachable ? "yes" : "no",
         latency: `${Date.now() - started}ms`,
         documents,
         folders,
+        cache: {
+          generation: result.generation,
+          age: age(result.updatedAt),
+        },
         // Surfaced rather than hidden: a listing that quietly drops items
         // reads as complete when it isn't.
-        ...(unreadable > 0 ? { unreadable } : {}),
+        ...(result.unreadable > 0 ? { unreadable: result.unreadable } : {}),
+        chrome,
+        ghostscript,
+        duplicates: dups.length,
+        ...(dups.length > 0
+          ? {
+              duplicateExamples: dups
+                .slice(0, 5)
+                .map(
+                  ([path, nodes]) =>
+                    `${path} (${nodes.map((n) => n.entry.id.slice(0, 8)).join(", ")})`,
+                ),
+            }
+          : {}),
+        ...(reachable ? {} : { error: "cloud unreachable; serving cached tree" }),
       },
+      ...(reachable
+        ? {}
+        : {
+            help: [
+              "Check network connectivity to the reMarkable cloud",
+              `The tree above is cached and ${age(result.updatedAt)} old`,
+            ],
+          }),
     };
   } catch (error) {
-    if (error instanceof AxiError) throw error;
+    if (error instanceof AxiError && error.code !== "CLOUD_UNREACHABLE") throw error;
     const message = error instanceof Error ? error.message : String(error);
     return {
       doctor: {
@@ -115,6 +170,8 @@ export async function doctor(args: string[]): Promise<Output> {
           : collapseHome(tokenPath),
         reachable: "no",
         error: message,
+        chrome,
+        ghostscript,
       },
       help: [
         "Check network connectivity to the reMarkable cloud",

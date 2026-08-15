@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { decodeRgba, optimizeForReading, pageGeometry } from "../src/strokes.js";
 import { frameFor } from "../src/render.js";
-import { parsePageSelection } from "../src/commands/fetch.js";
+import { parsePageSelection } from "../src/commands/get.js";
 
 /** Build a v6 stroke block the way the device stores one. */
 function lineBlock(

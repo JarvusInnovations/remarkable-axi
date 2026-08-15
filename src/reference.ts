@@ -1,5 +1,5 @@
 export const DESCRIPTION =
-  "Send articles and documents to a reMarkable tablet and manage its cloud files";
+  "Send documents to a reMarkable tablet, design pages for its panel, and pull handwriting back off it";
 
 export interface CommandDoc {
   usage: string;
@@ -17,44 +17,99 @@ export interface CommandGroup {
  * The one place command surface is described. The home view's help lines,
  * every `--help` block, and the generated SKILL.md region all derive from
  * this, so documentation cannot drift from the implementation.
+ *
+ * Groups match specs/commands/README.md.
  */
 export const COMMAND_GROUPS: CommandGroup[] = [
   {
-    group: "Send",
+    group: "Design",
     commands: [
       {
-        usage: "send <url> [--dir <path>] [--title <title>]",
+        usage: "page [--device <model>] [--landscape] [--css]",
         summary:
-          "Fetch a web article, convert it to EPUB, and upload it to the tablet",
+          "Report the target device's page box, and the CSS to author against it",
         flags: [
-          "--dir <path>    destination folder, created if missing (default: /)",
-          "--title <title> override the extracted article title",
+          "--device <model>  report for a model other than the configured target",
+          "--landscape       transpose the page box",
+          "--css             emit a @page block to paste into the document",
         ],
         examples: [
-          'remarkable-axi send "https://example.com/post" --dir /Articles',
-          'remarkable-axi send "https://example.com/post" --title "Weekend Reading"',
+          "remarkable-axi page",
+          "remarkable-axi page --css",
+          "remarkable-axi page --device paper-pro --landscape",
         ],
       },
       {
-        usage: "replace <path> <file>",
+        usage:
+          "render <html> [--out <path>] [--device <model>] [--landscape] [--device-page]",
         summary:
-          "Swap a document's contents in one step, leaving exactly one at the path",
+          "Print an HTML document to a PDF sized for the target device's page box",
         flags: [
-          "--name <name>  rename while replacing",
-          "--keep-old     upload the new copy but leave the old entry in place",
+          "--out <path>      where to write (default: ./<name>.pdf)",
+          "--device <model>  render for a model other than the configured target",
+          "--landscape       transpose the page box",
+          "--device-page     override the document's declared @page with the device page box",
         ],
         examples: [
-          "remarkable-axi replace /Papers/Draft.pdf ./draft-v2.pdf",
-          'remarkable-axi replace "/Calibration/Calibration rM2" ./cal.pdf',
+          "remarkable-axi render flyer.html",
+          "remarkable-axi render flyer.html --out ~/Desktop/flyer.pdf",
+          "remarkable-axi render flyer.html --device paper-pro --landscape",
         ],
       },
       {
-        usage: "put <file> [<dir>]",
-        summary: "Upload a local PDF or EPUB, creating the folder if missing",
-        flags: ["--name <name>  document name shown on the device"],
+        usage: "check <file> [--pages <spec>] [--device <model>] [--out <dir>] [--no-images]",
+        summary:
+          "Rasterize a PDF or HTML document at the device's density and lint it against the panel",
+        flags: [
+          "--pages <spec>    pages to image, e.g. 1,3,7-9 (default: all); restricts images only, never findings",
+          "--device <model>  check against a model other than the configured target",
+          "--out <dir>       where page images are written (default: a temp directory, reported)",
+          "--no-images       findings only",
+        ],
+        examples: [
+          "remarkable-axi check flyer.pdf",
+          "remarkable-axi check flyer.html --pages 1",
+          "remarkable-axi check deck.pdf --no-images",
+        ],
+      },
+    ],
+  },
+  {
+    group: "Move",
+    commands: [
+      {
+        usage: "put <src> <dest>",
+        summary:
+          "Send a local PDF/EPUB or a URL to the tablet — source first, destination last",
+        flags: [
+          "--name <name>    document name shown on the device (default: derived from source)",
+          "--replace        swap the contents of the document already at <dest>",
+          "--discard-ink    with --replace, proceed even though the target carries ink",
+        ],
         examples: [
           "remarkable-axi put ~/Downloads/paper.pdf /Papers",
-          'remarkable-axi put book.epub /Books --name "Field Notes"',
+          'remarkable-axi put "https://example.com/post" /Articles',
+          "remarkable-axi put draft-v2.pdf /Papers/Draft --replace",
+          "remarkable-axi put draft-v2.pdf /Papers/Draft --replace --discard-ink",
+        ],
+      },
+      {
+        usage: "get <path> [<dest>]",
+        summary:
+          "Bring a document down off the tablet — rendered ink, typed text, or the original file",
+        flags: [
+          "--as <fmt>      original, pdf (default), svg, or text",
+          "--pages <spec>  page numbers and ranges, e.g. 1,3,7-9 (default: all)",
+          "--fit <mode>    page (default) keeps the sheet; content crops to the ink",
+          "--overlay       draw ink over the original document, on the correct pages",
+          "--legible       rebalance stroke weight for reading/OCR (implies --fit content; not faithful)",
+          "--force         overwrite an existing file at <dest>",
+        ],
+        examples: [
+          'remarkable-axi get "/Papers/Draft" --as original',
+          'remarkable-axi get "/Quick sheets" --as pdf',
+          'remarkable-axi get "/Meeting Notes/Weekly" --as svg --pages 2 --fit content',
+          'remarkable-axi get "/Quick sheets" --as text',
         ],
       },
     ],
@@ -69,12 +124,6 @@ export const COMMAND_GROUPS: CommandGroup[] = [
         examples: ["remarkable-axi ls", "remarkable-axi ls /Articles"],
       },
       {
-        usage: "devices",
-        summary:
-          "Show known reMarkable models with screen specs and PDF page sizes",
-        examples: ["remarkable-axi devices"],
-      },
-      {
         usage: "find <pattern>",
         summary: "Search every document and folder name by substring or regex",
         flags: [
@@ -86,29 +135,11 @@ export const COMMAND_GROUPS: CommandGroup[] = [
           'remarkable-axi find "^Chapter" --type doc',
         ],
       },
-    ],
-  },
-  {
-    group: "Read",
-    commands: [
       {
-        usage: "fetch <path> [--as pdf|svg|text] [--pages 1-3,5] [--fit content|page]",
+        usage: "devices",
         summary:
-          "Render a notebook's handwriting to PDF or SVG, or extract its typed text",
-        flags: [
-          "--as <fmt>      pdf (default, all pages), svg (one page), or text",
-          "--pages <spec>  page numbers and ranges, e.g. 1,3,7-9 (default: all)",
-          "--fit <mode>    page (default) keeps the sheet; content crops to the ink",
-          "--out <path>    where to write (default: ./<name>.<ext>)",
-          "--overlay       draw ink over the original document, on the correct pages",
-          "--legible       rebalance stroke weight for reading/OCR (implies --fit content; not faithful)",
-        ],
-        examples: [
-          'remarkable-axi fetch "/Quick sheets" --as pdf',
-          'remarkable-axi fetch "/Meeting Notes/Weekly" --as svg --pages 2 --fit content',
-          'remarkable-axi fetch "/Papers/Draft.pdf" --as pdf',
-          'remarkable-axi fetch "/Quick sheets" --as text',
-        ],
+          "Show known reMarkable models with screen specs and PDF page sizes",
+        examples: ["remarkable-axi devices"],
       },
     ],
   },
@@ -144,8 +175,12 @@ export const COMMAND_GROUPS: CommandGroup[] = [
       },
       {
         usage: "doctor",
-        summary: "Check pairing, connectivity, and account reachability",
-        examples: ["remarkable-axi doctor"],
+        summary:
+          "Check pairing, connectivity, external tools, duplicate paths, and the cache",
+        flags: [
+          "--rebuild  discard the cached tree and rebuild it from scratch",
+        ],
+        examples: ["remarkable-axi doctor", "remarkable-axi doctor --rebuild"],
       },
       {
         usage: "setup device <model>",
@@ -209,6 +244,11 @@ export function renderTopLevelHelp(): string {
   ];
 
   for (const group of COMMAND_GROUPS) {
+    // A group can be declared with no commands yet — see the `Design` group
+    // above — so it stays out of the printed listing until something lands
+    // in it, rather than showing an empty header or crashing on Math.max().
+    if (group.commands.length === 0) continue;
+
     lines.push("", `${group.group}:`);
     const width = Math.max(
       ...group.commands.map((c) => c.usage.length),
