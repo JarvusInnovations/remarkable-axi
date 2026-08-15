@@ -1,185 +1,27 @@
-import { extname, basename } from "node:path";
-import { readFile, stat } from "node:fs/promises";
 import { AxiError } from "axi-sdk-js";
-import type { Entry } from "rmapi-js";
 import type { Output } from "../output.js";
-import { client } from "../auth.js";
-import { loadTree, recordMutation } from "../cache.js";
-import { parseFlags, str, requirePositional } from "../flags.js";
-import { buildTree, mkdirp, normalizePath, type Tree } from "../paths.js";
-import { articleToEpub, documentName } from "../article.js";
 
-/** The new document plus any freshly-created ancestor folders, for the cache. */
-function uploaded(
-  tree: Tree,
-  created: string[],
-  entry: Entry,
-): Entry[] {
-  return [...created.map((p) => tree.byPath.get(p)!.entry), entry];
-}
-
-function kb(bytes: number): string {
-  return bytes < 1024
-    ? `${bytes}B`
-    : bytes < 1024 * 1024
-      ? `${Math.round(bytes / 1024)}KB`
-      : `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
-}
-
+/**
+ * `send` was folded into `put` — a URL is a source type, not a verb. Retained
+ * as a targeted redirect (not a generic unknown-command error) so an agent
+ * self-corrects in one turn. See specs/commands/README.md#deprecations.
+ */
 export async function send(args: string[]): Promise<Output> {
-  const parsed = parseFlags("send", args, {
-    value: ["--dir", "--title"],
-    deprecated: {
-      "--format":
-        "--format was removed; articles are always sent as EPUB, which reflows on e-ink. Use `put` for a PDF you already have",
-      "--url": "--url was removed; pass the URL positionally: `send <url>`",
-    },
-  });
+  const url = args.find((a) => !a.startsWith("-")) ?? "<url>";
+  const dirIndex = args.indexOf("--dir");
+  const dir = dirIndex !== -1 ? args[dirIndex + 1] : undefined;
+  const titleIndex = args.indexOf("--title");
+  const title = titleIndex !== -1 ? args[titleIndex + 1] : undefined;
 
-  const url = requirePositional(
-    parsed,
-    0,
-    "a URL",
-    "Run `remarkable-axi send <url> --dir /Articles`",
+  const invocation = [
+    `remarkable-axi put "${url}"`,
+    dir ?? "/",
+    ...(title ? [`--name "${title}"`] : []),
+  ].join(" ");
+
+  throw new AxiError(
+    "`send` was folded into `put`; a URL source is detected automatically",
+    "USAGE",
+    [invocation],
   );
-  const dir = normalizePath(str(parsed, "--dir", "/"));
-  const titleOverride = str(parsed, "--title", "") || undefined;
-
-  const { name, buffer, article } = await articleToEpub(url, titleOverride);
-
-  const api = await client();
-  const tree = buildTree((await loadTree(api)).entries);
-  const { id: parent, created } = await mkdirp(api, tree, dir);
-
-  const ref = await api.putEpub(name, buffer, {
-    parent,
-    title: article.title,
-    ...(article.byline ? { authors: [article.byline] } : {}),
-    publicationDate: new Date().toISOString(),
-  });
-
-  await recordMutation(api, {
-    upsert: uploaded(tree, created, {
-      id: ref.id,
-      hash: ref.hash,
-      type: "DocumentType",
-      fileType: "epub",
-      visibleName: name,
-      lastModified: new Date().toISOString(),
-      lastOpened: "",
-      pinned: false,
-      parent,
-    } as Entry),
-  });
-
-  return {
-    sent: {
-      name,
-      dir,
-      size: kb(buffer.byteLength),
-      images: article.images.length,
-      words: Math.round(article.textLength / 5),
-      source: article.sourceUrl,
-    },
-    ...(created.length > 0 ? { created: created.join(", ") } : {}),
-    help: [
-      `Run \`remarkable-axi ls ${dir}\` to confirm it landed`,
-      "The tablet shows it after its next cloud sync",
-    ],
-  };
-}
-
-const UPLOADABLE = new Set([".pdf", ".epub"]);
-
-export async function put(args: string[]): Promise<Output> {
-  const parsed = parseFlags("put", args, { value: ["--name"] });
-
-  const file = requirePositional(
-    parsed,
-    0,
-    "a file path",
-    "Run `remarkable-axi put <file> [<dir>]`",
-  );
-  const dir = normalizePath(parsed.positional[1] ?? "/");
-
-  const ext = extname(file).toLowerCase();
-  if (!UPLOADABLE.has(ext)) {
-    throw new AxiError(
-      `cannot upload ${ext || "a file with no extension"}`,
-      "UNSUPPORTED_FORMAT",
-      [
-        "The reMarkable cloud accepts only .pdf and .epub",
-        "Run `remarkable-axi send <url>` to convert a web article to EPUB",
-      ],
-    );
-  }
-
-  let size: number;
-  try {
-    const info = await stat(file);
-    if (!info.isFile()) {
-      throw new AxiError(`not a file: ${file}`, "NOT_FOUND", [
-        "Pass a path to a .pdf or .epub file",
-      ]);
-    }
-    size = info.size;
-  } catch (error) {
-    if (error instanceof AxiError) throw error;
-    throw new AxiError(`no such file: ${file}`, "NOT_FOUND", [
-      "Check the path and try again",
-    ]);
-  }
-
-  const buffer = new Uint8Array(await readFile(file));
-  const name = documentName(
-    str(parsed, "--name", "") || basename(file, extname(file)),
-  );
-
-  const api = await client();
-  const tree = buildTree((await loadTree(api)).entries);
-  const { id: parent, created } = await mkdirp(api, tree, dir);
-
-  // The cloud happily stores two documents with the same name in one folder,
-  // and a path lookup can then only ever resolve one of them. Surface the
-  // collision rather than letting it be discovered later.
-  const collisions = [...tree.byId.values()].filter(
-    (n) => (n.entry.parent ?? "") === parent && n.entry.visibleName === name,
-  ).length;
-
-  const ref =
-    ext === ".pdf"
-      ? await api.putPdf(name, buffer, { parent })
-      : await api.putEpub(name, buffer, { parent });
-
-  await recordMutation(api, {
-    upsert: uploaded(tree, created, {
-      id: ref.id,
-      hash: ref.hash,
-      type: "DocumentType",
-      fileType: ext === ".pdf" ? "pdf" : "epub",
-      visibleName: name,
-      lastModified: new Date().toISOString(),
-      lastOpened: "",
-      pinned: false,
-      parent,
-    } as Entry),
-  });
-
-  return {
-    uploaded: { name, dir, size: kb(size), format: ext.slice(1) },
-    ...(created.length > 0 ? { created: created.join(", ") } : {}),
-    ...(collisions > 0
-      ? {
-          duplicate: `${collisions + 1} documents now named "${name}" in ${dir}`,
-        }
-      : {}),
-    help: [
-      `Run \`remarkable-axi ls ${dir}\` to confirm it landed`,
-      ...(collisions > 0
-        ? [
-            `Run \`remarkable-axi replace ${dir}/${name} <file>\` next time to supersede instead of duplicating`,
-          ]
-        : []),
-    ],
-  };
 }
