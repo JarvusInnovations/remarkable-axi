@@ -69,12 +69,15 @@ help: remarkable-axi put "https://example.com/post" /Articles
 
 `--keep-old` is retired outright rather than redirected. Its only function was to
 leave two documents at one path — the state the tool refuses to operate on, and which
-`--replace` itself rejects on the next run. `--keep-ink` occupies the intent it was
-reaching for.
+`--replace` itself rejects on the next run. `--keep-ink`, described in
+[ink-preservation](../behaviors/ink-preservation.md#carrying-ink-forward-not-yet-shipped),
+occupies the intent it was reaching for, but is not implemented — see that spec for
+why. `--replace`'s own `HAS_INK` refusal (also in ink-preservation) covers saving the
+annotated version separately in the meantime.
 
 ```
 $ remarkable-axi put draft.pdf /Papers/Draft --replace --keep-old
 error: --keep-old is retired; it left two documents at one path
-help: to carry annotations onto the new version, use --keep-ink
+help: to save the annotated version first, use `remarkable-axi get <path> --overlay <file>.pdf`
       to keep the old version as a separate document, give it a distinct --name
 ```
