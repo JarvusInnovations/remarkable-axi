@@ -79,7 +79,19 @@ caveat that appears on every row stops being read.
 Calibration status is a fact about the world, not about the code, so it changes when
 someone with the hardware measures it. Each unverified model carries a tracking issue
 with the procedure, so a contributor with that device can complete it without reverse
-engineering how the first one was done.
+engineering how the first one was done:
+
+| Model | Issue |
+| --- | --- |
+| RM110 — reMarkable 2 | #10 |
+| RM100 — reMarkable 1 | #11 |
+| RM03A — reMarkable Paper Pro Move | #12 |
+| RM102 — reMarkable Paper Pure | #13 |
+
+The three measurements are independent, so a partial result still moves a model's
+status. A measurement is accepted only with its provenance — what was measured, on
+what, and with what residuals — because a number without that is exactly the guessed
+constant this project declines to ship.
 
 ## Principles
 

@@ -5,7 +5,7 @@ specs:
   - specs/behaviors/page-geometry.md
   - specs/behaviors/device-calibration.md
   - specs/commands/page.md
-issues: []
+issues: [10, 11, 12, 13]
 ---
 
 # Page geometry and the page command
