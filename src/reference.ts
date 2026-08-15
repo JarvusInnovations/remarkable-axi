@@ -20,6 +20,26 @@ export interface CommandGroup {
  */
 export const COMMAND_GROUPS: CommandGroup[] = [
   {
+    group: "Design",
+    commands: [
+      {
+        usage: "page [--device <model>] [--landscape] [--css]",
+        summary:
+          "Report the target device's page box, and the CSS to author against it",
+        flags: [
+          "--device <model>  report for a model other than the configured target",
+          "--landscape       transpose the page box",
+          "--css             emit a @page block to paste into the document",
+        ],
+        examples: [
+          "remarkable-axi page",
+          "remarkable-axi page --css",
+          "remarkable-axi page --device paper-pro --landscape",
+        ],
+      },
+    ],
+  },
+  {
     group: "Send",
     commands: [
       {

@@ -1,11 +1,12 @@
 ---
-status: planned
+status: done
 depends: []
 specs:
   - specs/behaviors/page-geometry.md
   - specs/behaviors/device-calibration.md
   - specs/commands/page.md
 issues: [10, 11, 12, 13]
+pr: 15
 ---
 
 # Page geometry and the page command
@@ -52,19 +53,19 @@ contributor with that hardware can resolve it.
 
 ## Validation
 
-- [ ] `page` with a configured target reports device, screen, density, and page box
-- [ ] `page --css` emits a block that renders full-bleed with no letterboxing
-- [ ] `page --landscape` transposes the box and nothing else
-- [ ] `page --device <model>` overrides without touching stored config
-- [ ] `page` completes with no network and while unpaired
-- [ ] `page` with no target and no `--device` fails `NO_DEVICE` listing the models
-- [ ] `@page` detection returns absent / matching / differing-with-signed-delta
-- [ ] Delta is reported in points and states which side of the box it falls on
+- [x] `page` with a configured target reports device, screen, density, and page box
+- [x] `page --css` emits a block that renders full-bleed with no letterboxing
+- [x] `page --landscape` transposes the box and nothing else
+- [x] `page --device <model>` overrides without touching stored config
+- [x] `page` completes with no network and while unpaired
+- [x] `page` with no target and no `--device` fails `NO_DEVICE` listing the models
+- [x] `@page` detection returns absent / matching / differing-with-signed-delta
+- [x] Delta is reported in points and states which side of the box it falls on
 - [ ] Detection is exercised by one test suite consumed by both render and check
-- [ ] `devices` carries a calibration column; RM02A reads calibrated, the rest unverified
+- [x] `devices` carries a calibration column; RM02A reads calibrated, the rest unverified
 - [ ] `page`, `render`, and `check` state the caveat once per invocation for an uncalibrated target
 - [ ] The caveat never repeats per page or per finding
-- [ ] Each unverified model has an open tracking issue carrying the procedure
+- [x] Each unverified model has an open tracking issue carrying the procedure
 
 ## Risks / unknowns
 
@@ -79,4 +80,42 @@ model could plausibly have a verified page box and an unverified ink transform.
 
 ## Notes
 
+`page --css` "renders full-bleed with no letterboxing" was verified as a property, not
+on real hardware: `test/page.test.ts` asserts the emitted block declares `margin: 0`
+on every rule and, for every model, round-trips through `parseDeclaredPageBox` back to
+exactly the device box (`detectPageBox` reports `matches`). That is everything this
+repo can confirm without a tablet on the desk.
+
+Two validation lines are left unchecked because they describe `render` and `check`
+consuming this plan's output, and neither command exists yet — `render-command` and
+`check-command` are separate, dependent plans. What this plan delivers is the shared
+unit itself: `detectPageBox`/`describeDelta` in `src/page.ts`, fully tested in
+isolation (absent/matches/differs, signed per-axis delta, which side it falls on), and
+`pageBoxCaveat` in `src/devices.ts` for the once-per-invocation caveat wording. `page`
+itself does state the caveat correctly (verified) — the checkbox is about all three
+commands agreeing, which needs the other two plans landed to confirm.
+
+`resolveTarget` and `pageBoxCaveat` in `src/devices.ts` are the reuse points those two
+plans should call rather than reimplementing device resolution or calibration wording.
+
+Known limitation, not currently blocking: `parseDeclaredPageBox` only resolves numeric
+`@page { size: ... }` values (pt/in/mm/cm/px). A keyword page size (`A4`, `letter`)
+reads as "no declaration" rather than as a differing declaration. Every document this
+tool itself emits or injects is numeric, so this doesn't affect the round-trip case;
+it would only matter for arbitrary uploaded HTML that declares a keyword size, which
+is `render`'s and `check`'s problem to hit, not this plan's.
+
 ## Follow-ups
+
+- Deferred to plan: `render-command` — consume `detectPageBox`/`describeDelta` for
+  injection + the differing-declaration warning, and state `pageBoxCaveat` once in its
+  own output; confirms the two unticked validation lines above once merged.
+- Deferred to plan: `check-command` — consume the same detection for its page-box
+  finding, so the "detection exercised by one suite consumed by both" line closes;
+  also the natural place to decide whether keyword `@page` sizes need support.
+- Tracked as: issues #10 (RM110), #11 (RM100), #12 (RM03A), #13 (RM102) — the four
+  hardware calibrations this plan could not perform from the repo.
+- None: the epsilon (`MATCH_EPSILON = 0.5pt`) chosen for "matches" in `detectPageBox`
+  isn't specified numerically anywhere upstream; documented inline with its rationale
+  (Chrome rounds its own print box to whole points). Revisit only if a later plan's
+  real-world testing shows it too loose or too tight.

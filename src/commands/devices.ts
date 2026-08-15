@@ -6,6 +6,7 @@ import { collapseHome } from "../output.js";
 import {
   acceptedNames,
   allSpecs,
+  pageBoxCaveat,
   resolveModel,
   spec,
 } from "../devices.js";
@@ -46,6 +47,7 @@ export async function devices(args: string[]): Promise<Output> {
       screen: s.screen,
       dpi: s.dpi,
       pagePt: s.pagePt,
+      calibration: s.calibration,
       target: s.model === targetDevice ? "yes" : "no",
     })),
     help: [
@@ -53,6 +55,7 @@ export async function devices(args: string[]): Promise<Output> {
         ? "Run `remarkable-axi setup device <model>` to change the target"
         : "Run `remarkable-axi setup device <model>` so the target shows in every session",
       "`pagePt` is the full-bleed portrait page size to generate PDFs at",
+      "`calibration` is `calibrated` only where the numbers were measured on hardware — see `specs/behaviors/device-calibration.md`",
     ],
   };
 }
@@ -78,6 +81,9 @@ export async function setupDevice(args: string[]): Promise<Output> {
   const previous = (await readConfig()).targetDevice;
   const path = await writeConfig({ targetDevice: model });
   const s = spec(model);
+  // Stated once here, not per command that later reads this target — see
+  // specs/behaviors/device-calibration.md.
+  const caveat = pageBoxCaveat(model);
 
   // Setting the same target again is the desired state, not a failure.
   if (previous === model) {
@@ -90,7 +96,9 @@ export async function setupDevice(args: string[]): Promise<Output> {
         physical: s.physical,
         pagePt: s.pagePt,
         aspect: s.aspect,
+        calibration: s.calibration,
       },
+      ...(caveat ? { note: caveat } : {}),
     };
   }
 
@@ -103,9 +111,10 @@ export async function setupDevice(args: string[]): Promise<Output> {
       physical: s.physical,
       pagePt: s.pagePt,
       aspect: s.aspect,
+      calibration: s.calibration,
     },
     saved: collapseHome(path),
-    note: DECLARED,
+    note: caveat ? `${DECLARED}; ${caveat}` : DECLARED,
     help: [
       "Every session now starts with these specs in context",
       `Generate PDFs at ${s.pagePt} for a full-bleed portrait page`,
