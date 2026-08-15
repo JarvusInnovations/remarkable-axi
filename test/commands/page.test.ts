@@ -17,13 +17,20 @@ describe("page command", () => {
   });
 
   test("states the calibration caveat once for an unverified target", async () => {
-    const output = await page(["--device", "rm2"]);
+    // rm1 rather than rm2: RM110's page box was verified on hardware, so it
+    // no longer carries the caveat this test is about.
+    const output = await page(["--device", "rm1"]);
     expect(output.device).toBe(
-      "RM110 (reMarkable 2) — page box unverified, derived from published specs",
+      "RM100 (reMarkable 1) — page box unverified, derived from published specs",
     );
     // Stated exactly once — not folded into every field.
     expect(String(output.screen)).not.toContain("unverified");
     expect(String(output.page)).not.toContain("unverified");
+  });
+
+  test("a target whose page box was verified carries no caveat at all", async () => {
+    const output = await page(["--device", "rm2"]);
+    expect(output.device).toBe("RM110 (reMarkable 2)");
   });
 
   test("--landscape transposes the box and nothing else", async () => {

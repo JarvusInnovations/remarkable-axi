@@ -181,11 +181,12 @@ describe.skipIf(chrome === null)("render command", () => {
   test("the calibration caveat is stated once, in the device field", async () => {
     const html = await writeHtml("caveat.html", "<html><body>x</body></html>");
 
-    const output = await render([html, "--device", "rm2"]);
+    // rm1: RM110's page box is verified on hardware and so carries no caveat.
+    const output = await render([html, "--device", "rm1"]);
     const rendered = output.rendered as Record<string, unknown>;
 
     expect(rendered.device).toBe(
-      "RM110 — page box unverified, derived from published specs",
+      "RM100 — page box unverified, derived from published specs",
     );
     expect(String(rendered.page)).not.toContain("unverified");
   });

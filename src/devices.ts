@@ -209,7 +209,11 @@ export interface Calibration {
  */
 const CALIBRATION: Record<DeviceModel, Calibration> = {
   RM02A: { pageBox: "calibrated", inkPlacement: "calibrated", palette: "calibrated" },
-  RM110: { pageBox: "unverified", inkPlacement: "unverified", palette: "n/a" },
+  // Page box confirmed on hardware: a PDF generated at the derived 447x596pt
+  // box shows zero shift when toggling fit-to-width against fit-to-height, so
+  // the two fits resolve to the same scale. See issue #10. Ink placement is
+  // still the constant measured on RM02A.
+  RM110: { pageBox: "calibrated", inkPlacement: "unverified", palette: "n/a" },
   RM100: { pageBox: "unverified", inkPlacement: "unverified", palette: "n/a" },
   RM03A: { pageBox: "unverified", inkPlacement: "unverified", palette: "unverified" },
   RM102: { pageBox: "unverified", inkPlacement: "unverified", palette: "unverified" },
@@ -229,11 +233,23 @@ export function calibration(model: DeviceModel): Calibration {
 export function calibrationLabel(model: DeviceModel): string {
   const c = CALIBRATION[model];
   const settled = (status: AxisStatus) => status !== "unverified";
-  const fullyCalibrated =
-    c.pageBox === "calibrated" &&
-    c.inkPlacement === "calibrated" &&
-    settled(c.palette);
-  return fullyCalibrated ? "calibrated" : "unverified (published specs)";
+
+  if (c.pageBox === "calibrated" && c.inkPlacement === "calibrated" && settled(c.palette)) {
+    return "calibrated";
+  }
+
+  // Axes are measured independently and land one at a time, so a model part
+  // way through says which part is real rather than collapsing back to
+  // "unverified" — that would hide a contributor's result and invite someone
+  // to measure it twice.
+  const verified: string[] = [];
+  if (c.pageBox === "calibrated") verified.push("page box");
+  if (c.inkPlacement === "calibrated") verified.push("ink placement");
+  if (c.palette === "calibrated") verified.push("palette");
+
+  return verified.length > 0
+    ? `${verified.join(" + ")} verified`
+    : "unverified (published specs)";
 }
 
 /**
