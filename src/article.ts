@@ -173,7 +173,7 @@ export async function extractArticle(
     parsedUrl = new URL(url);
   } catch {
     throw new AxiError(`not a valid URL: ${url}`, "USAGE", [
-      "Run `remarkable-axi send <url> --dir /Articles` with a full http(s) URL",
+      "Run `remarkable-axi put <url> <dest>` with a full http(s) URL",
     ]);
   }
   if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
@@ -206,7 +206,7 @@ export async function extractArticle(
       response.status === 403 || response.status === 401
         ? [
             "The site blocked the request — many publishers reject non-browser traffic",
-            "Save the page as a PDF and use `remarkable-axi put <file> <dir>` instead",
+            "Save the page as a PDF and use `remarkable-axi put <file> <dest>` instead",
           ]
         : ["Check the URL is correct and publicly reachable"],
     );
@@ -233,7 +233,7 @@ export async function extractArticle(
       "NO_CONTENT",
       [
         "The page's markup defeated the article extractor",
-        "Save it as a PDF and use `remarkable-axi put <file> <dir>` instead",
+        "Save it as a PDF and use `remarkable-axi put <file> <dest>` instead",
       ],
     );
   }
@@ -244,7 +244,7 @@ export async function extractArticle(
       "NO_CONTENT",
       [
         "The page may be a listing, paywalled, or rendered entirely client-side",
-        "Save it as a PDF and use `remarkable-axi put <file> <dir>` instead",
+        "Save it as a PDF and use `remarkable-axi put <file> <dest>` instead",
       ],
     );
   }

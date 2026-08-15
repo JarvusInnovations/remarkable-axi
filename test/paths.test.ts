@@ -3,12 +3,15 @@ import type { Entry } from "rmapi-js";
 import {
   baseName,
   buildTree,
+  duplicatePaths,
   listChildren,
   lookup,
   mkdirp,
+  nodesAt,
   normalizePath,
   parentPath,
   resolveParentId,
+  resolvePutDestination,
   segments,
 } from "../src/paths.js";
 
@@ -292,5 +295,113 @@ describe("pdfPageIndexes", () => {
     const { pdfPageIndexes } = await import("../src/entries.js");
     expect(pdfPageIndexes({}, ["a"]).size).toBe(0);
     expect(pdfPageIndexes(null, ["a"]).size).toBe(0);
+  });
+});
+
+describe("nodesAt", () => {
+  test("returns every entry at a path, not just the first", () => {
+    const tree = buildTree([doc("d1", "Notes"), doc("d2", "Notes")]);
+    expect(nodesAt(tree, "/Notes").map((n) => n.entry.id).sort()).toEqual([
+      "d1",
+      "d2",
+    ]);
+  });
+
+  test("returns a single-element list for a unique path", () => {
+    const tree = buildTree([doc("d1", "Draft")]);
+    expect(nodesAt(tree, "/Draft").map((n) => n.entry.id)).toEqual(["d1"]);
+  });
+
+  test("returns nothing for a path with no entry", () => {
+    expect(nodesAt(buildTree([]), "/Nope")).toEqual([]);
+  });
+});
+
+describe("duplicatePaths", () => {
+  test("groups siblings that share a path", () => {
+    const tree = buildTree([
+      folder("f1", "Papers"),
+      doc("d1", "Draft", "f1"),
+      doc("d2", "Draft", "f1"),
+      doc("d3", "Unique", "f1"),
+    ]);
+    const dups = duplicatePaths(tree);
+    expect(dups.size).toBe(1);
+    expect(dups.get("/Papers/Draft")?.map((n) => n.entry.id).sort()).toEqual([
+      "d1",
+      "d2",
+    ]);
+    expect(dups.has("/Papers/Unique")).toBe(false);
+  });
+
+  test("is empty when every path is unique", () => {
+    const tree = buildTree([doc("d1", "A"), doc("d2", "B")]);
+    expect(duplicatePaths(tree).size).toBe(0);
+  });
+
+  test("does not confuse a folder and document that merely share a name", () => {
+    // Different types can coincidentally share a visible name in different
+    // parents without colliding — only an identical *path* is a duplicate.
+    const tree = buildTree([folder("f1", "Notes"), doc("d1", "Notes", "f1")]);
+    expect(duplicatePaths(tree).size).toBe(0);
+  });
+});
+
+describe("resolvePutDestination", () => {
+  test("lands inside an existing folder, named from the source", () => {
+    const tree = buildTree([folder("f1", "Papers")]);
+    const dest = resolvePutDestination(tree, "/Papers", "Draft");
+    expect(dest.finalPath).toBe("/Papers/Draft");
+    expect(dest.parentId).toBe("f1");
+    expect(dest.parentPath).toBe("/Papers");
+    expect(dest.needsMkdirp).toBe(false);
+    expect(dest.existing).toEqual([]);
+  });
+
+  test("lands at the root when dest is /", () => {
+    const tree = buildTree([]);
+    const dest = resolvePutDestination(tree, "/", "Draft");
+    expect(dest.finalPath).toBe("/Draft");
+    expect(dest.parentPath).toBe("/");
+    expect(dest.needsMkdirp).toBe(false);
+  });
+
+  test("treats a non-existent trailing segment as the document's own path", () => {
+    const tree = buildTree([folder("f1", "Papers")]);
+    const dest = resolvePutDestination(tree, "/Papers/Draft", "ignored");
+    expect(dest.finalPath).toBe("/Papers/Draft");
+    expect(dest.name).toBe("Draft");
+    expect(dest.parentPath).toBe("/Papers");
+    expect(dest.needsMkdirp).toBe(true);
+  });
+
+  test("--name is ignored once dest names an explicit path", () => {
+    // The cloud has no separate path concept — the path *is* the name chain —
+    // so honoring a conflicting --name here would upload a document that
+    // isn't actually found at the path just reported.
+    const tree = buildTree([]);
+    const dest = resolvePutDestination(tree, "/Papers/Draft", "Something Else");
+    expect(dest.name).toBe("Draft");
+  });
+
+  test("reports a single occupying document", () => {
+    const tree = buildTree([doc("d1", "Draft")]);
+    const dest = resolvePutDestination(tree, "/Draft", "ignored");
+    expect(dest.existing.map((n) => n.entry.id)).toEqual(["d1"]);
+  });
+
+  test("reports every occupying document when the path is already ambiguous", () => {
+    const tree = buildTree([doc("d1", "Draft"), doc("d2", "Draft")]);
+    const dest = resolvePutDestination(tree, "/Draft", "ignored");
+    expect(dest.existing.map((n) => n.entry.id).sort()).toEqual(["d1", "d2"]);
+  });
+
+  test("a folder-landing collision is also reported as existing", () => {
+    const tree = buildTree([
+      folder("f1", "Papers"),
+      doc("d1", "Draft", "f1"),
+    ]);
+    const dest = resolvePutDestination(tree, "/Papers", "Draft");
+    expect(dest.existing.map((n) => n.entry.id)).toEqual(["d1"]);
   });
 });

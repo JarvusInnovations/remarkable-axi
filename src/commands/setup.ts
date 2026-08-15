@@ -4,7 +4,7 @@ import { collapseHome } from "../output.js";
 import { register } from "rmapi-js";
 import { client, readToken, tokenPath, writeToken } from "../auth.js";
 import { bool, parseFlags, requirePositional } from "../flags.js";
-import { buildTree } from "../paths.js";
+import { buildTree, duplicatePaths } from "../paths.js";
 import { discardCache, loadTree } from "../cache.js";
 import { age } from "../time.js";
 import { setupDevice } from "./devices.js";
@@ -95,6 +95,11 @@ export async function doctor(args: string[]): Promise<Output> {
     ).length;
     const reachable = result.source !== "stale";
 
+    // Duplicated paths are detected here, standing apart from write-time
+    // prevention, because they arrive from the device and other clients
+    // regardless of what this tool does — see specs/behaviors/path-uniqueness.md.
+    const dups = [...duplicatePaths(tree).entries()];
+
     return {
       doctor: {
         paired: "yes",
@@ -112,6 +117,17 @@ export async function doctor(args: string[]): Promise<Output> {
         // Surfaced rather than hidden: a listing that quietly drops items
         // reads as complete when it isn't.
         ...(result.unreadable > 0 ? { unreadable: result.unreadable } : {}),
+        duplicates: dups.length,
+        ...(dups.length > 0
+          ? {
+              duplicateExamples: dups
+                .slice(0, 5)
+                .map(
+                  ([path, nodes]) =>
+                    `${path} (${nodes.map((n) => n.entry.id.slice(0, 8)).join(", ")})`,
+                ),
+            }
+          : {}),
         ...(reachable ? {} : { error: "cloud unreachable; serving cached tree" }),
       },
       ...(reachable

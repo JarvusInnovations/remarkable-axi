@@ -112,6 +112,114 @@ export function lookup(tree: Tree, path: string): Node | null {
 }
 
 /**
+ * Every entry resolving to exactly this path, not just the first.
+ *
+ * `lookup` (and `tree.byPath`) is first-writer-wins, because a path can only
+ * ever name one thing for a normal read. Anything that writes or replaces at
+ * a path has to see every colliding entry instead, so it can refuse rather
+ * than silently picking one — see
+ * [path-uniqueness](../specs/behaviors/path-uniqueness.md).
+ */
+export function nodesAt(tree: Tree, path: string): Node[] {
+  const normalized = normalizePath(path);
+  return [...tree.byId.values()].filter((n) => n.path === normalized);
+}
+
+/**
+ * Every path held by more than one entry, with all of its colliding nodes.
+ *
+ * The cloud permits duplicate sibling names, so this is a standing detection
+ * pass rather than a one-time check — `ls`, `find`, and `doctor` all surface
+ * it. See
+ * [Never manufacture a state the tool refuses to operate on](../specs/principles.md#never-manufacture-a-state-the-tool-refuses-to-operate-on).
+ */
+export function duplicatePaths(tree: Tree): Map<string, Node[]> {
+  const groups = new Map<string, Node[]>();
+  for (const node of tree.byId.values()) {
+    const bucket = groups.get(node.path);
+    bucket ? bucket.push(node) : groups.set(node.path, [node]);
+  }
+  for (const [path, nodes] of groups) {
+    if (nodes.length < 2) groups.delete(path);
+  }
+  return groups;
+}
+
+/**
+ * Resolve `put`'s destination shape: a trailing segment that names an
+ * existing folder is a place to land inside; anything else is the document's
+ * own full path. See [put](../specs/commands/put.md#destination).
+ *
+ * `name` is only used in the land-inside-folder case. When `dest` names an
+ * explicit path, that path's own trailing segment *is* the name — the cloud
+ * has no separate path concept, so honoring a conflicting `--name` there
+ * would upload a document whose visible name doesn't match the path this
+ * tool just told the caller it landed at.
+ */
+export interface PutDestination {
+  /** Folder id to upload into (empty when the parent still needs creating). */
+  parentId: string;
+  /** Folder path to upload into. */
+  parentPath: string;
+  /** The document name this upload will use. */
+  name: string;
+  /** The document's resulting full path. */
+  finalPath: string;
+  /** Document(s) already occupying `finalPath` — 0, 1, or several. */
+  existing: Node[];
+  /** Whether missing parent folders must be created before uploading. */
+  needsMkdirp: boolean;
+}
+
+export function resolvePutDestination(
+  tree: Tree,
+  dest: string,
+  name: string,
+): PutDestination {
+  const normalized = normalizePath(dest);
+
+  // The root has no Entry of its own — `lookup` always returns null for it —
+  // so it needs its own branch to still count as "land inside an existing
+  // folder" rather than falling through to the explicit-path branch below.
+  if (normalized === "/") {
+    const finalPath = `/${name}`;
+    return {
+      parentId: ROOT,
+      parentPath: "/",
+      name,
+      finalPath,
+      existing: nodesAt(tree, finalPath),
+      needsMkdirp: false,
+    };
+  }
+
+  const node = lookup(tree, normalized);
+
+  if (node && node.entry.type === "CollectionType") {
+    // `normalized` is never "/" here — that case returned above — so the
+    // join always needs the separator.
+    const finalPath = `${normalized}/${name}`;
+    return {
+      parentId: node.entry.id,
+      parentPath: normalized,
+      name,
+      finalPath,
+      existing: nodesAt(tree, finalPath),
+      needsMkdirp: false,
+    };
+  }
+
+  return {
+    parentId: "",
+    parentPath: parentPath(normalized),
+    name: baseName(normalized),
+    finalPath: normalized,
+    existing: nodesAt(tree, normalized),
+    needsMkdirp: true,
+  };
+}
+
+/**
  * Resolve a path to the parent id that new items under it should use.
  * Returns `""` for the root. Throws if the path is missing or is a document.
  */

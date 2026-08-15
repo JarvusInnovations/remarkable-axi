@@ -21,6 +21,7 @@ opposite direction.
 | `--fit <mode>` | `page` (default) keeps the sheet; `content` crops to the ink |
 | `--overlay` | draw ink over the original document, on the correct pages |
 | `--legible` | rebalance stroke weight for reading and OCR (implies `--fit content`) |
+| `--force` | overwrite an existing local file at the destination |
 
 ## Formats
 

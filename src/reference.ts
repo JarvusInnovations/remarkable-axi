@@ -17,6 +17,11 @@ export interface CommandGroup {
  * The one place command surface is described. The home view's help lines,
  * every `--help` block, and the generated SKILL.md region all derive from
  * this, so documentation cannot drift from the implementation.
+ *
+ * Groups match specs/commands/README.md. `Design` is declared even while
+ * empty here — `page`, `render`, and `check` belong to sibling plans not yet
+ * built — so those land as entries in an existing group rather than a new
+ * section.
  */
 export const COMMAND_GROUPS: CommandGroup[] = [
   {
@@ -40,41 +45,39 @@ export const COMMAND_GROUPS: CommandGroup[] = [
     ],
   },
   {
-    group: "Send",
+    group: "Move",
     commands: [
       {
-        usage: "send <url> [--dir <path>] [--title <title>]",
+        usage: "put <src> <dest>",
         summary:
-          "Fetch a web article, convert it to EPUB, and upload it to the tablet",
+          "Send a local PDF/EPUB or a URL to the tablet — source first, destination last",
         flags: [
-          "--dir <path>    destination folder, created if missing (default: /)",
-          "--title <title> override the extracted article title",
+          "--name <name>  document name shown on the device (default: derived from source)",
+          "--replace      swap the contents of the document already at <dest>",
         ],
-        examples: [
-          'remarkable-axi send "https://example.com/post" --dir /Articles',
-          'remarkable-axi send "https://example.com/post" --title "Weekend Reading"',
-        ],
-      },
-      {
-        usage: "replace <path> <file>",
-        summary:
-          "Swap a document's contents in one step, leaving exactly one at the path",
-        flags: [
-          "--name <name>  rename while replacing",
-          "--keep-old     upload the new copy but leave the old entry in place",
-        ],
-        examples: [
-          "remarkable-axi replace /Papers/Draft.pdf ./draft-v2.pdf",
-          'remarkable-axi replace "/Calibration/Calibration rM2" ./cal.pdf',
-        ],
-      },
-      {
-        usage: "put <file> [<dir>]",
-        summary: "Upload a local PDF or EPUB, creating the folder if missing",
-        flags: ["--name <name>  document name shown on the device"],
         examples: [
           "remarkable-axi put ~/Downloads/paper.pdf /Papers",
-          'remarkable-axi put book.epub /Books --name "Field Notes"',
+          'remarkable-axi put "https://example.com/post" /Articles',
+          "remarkable-axi put draft-v2.pdf /Papers/Draft --replace",
+        ],
+      },
+      {
+        usage: "get <path> [<dest>]",
+        summary:
+          "Bring a document down off the tablet — rendered ink, typed text, or the original file",
+        flags: [
+          "--as <fmt>      original, pdf (default), svg, or text",
+          "--pages <spec>  page numbers and ranges, e.g. 1,3,7-9 (default: all)",
+          "--fit <mode>    page (default) keeps the sheet; content crops to the ink",
+          "--overlay       draw ink over the original document, on the correct pages",
+          "--legible       rebalance stroke weight for reading/OCR (implies --fit content; not faithful)",
+          "--force         overwrite an existing file at <dest>",
+        ],
+        examples: [
+          'remarkable-axi get "/Papers/Draft" --as original',
+          'remarkable-axi get "/Quick sheets" --as pdf',
+          'remarkable-axi get "/Meeting Notes/Weekly" --as svg --pages 2 --fit content',
+          'remarkable-axi get "/Quick sheets" --as text',
         ],
       },
     ],
@@ -89,12 +92,6 @@ export const COMMAND_GROUPS: CommandGroup[] = [
         examples: ["remarkable-axi ls", "remarkable-axi ls /Articles"],
       },
       {
-        usage: "devices",
-        summary:
-          "Show known reMarkable models with screen specs and PDF page sizes",
-        examples: ["remarkable-axi devices"],
-      },
-      {
         usage: "find <pattern>",
         summary: "Search every document and folder name by substring or regex",
         flags: [
@@ -106,29 +103,11 @@ export const COMMAND_GROUPS: CommandGroup[] = [
           'remarkable-axi find "^Chapter" --type doc',
         ],
       },
-    ],
-  },
-  {
-    group: "Read",
-    commands: [
       {
-        usage: "fetch <path> [--as pdf|svg|text] [--pages 1-3,5] [--fit content|page]",
+        usage: "devices",
         summary:
-          "Render a notebook's handwriting to PDF or SVG, or extract its typed text",
-        flags: [
-          "--as <fmt>      pdf (default, all pages), svg (one page), or text",
-          "--pages <spec>  page numbers and ranges, e.g. 1,3,7-9 (default: all)",
-          "--fit <mode>    page (default) keeps the sheet; content crops to the ink",
-          "--out <path>    where to write (default: ./<name>.<ext>)",
-          "--overlay       draw ink over the original document, on the correct pages",
-          "--legible       rebalance stroke weight for reading/OCR (implies --fit content; not faithful)",
-        ],
-        examples: [
-          'remarkable-axi fetch "/Quick sheets" --as pdf',
-          'remarkable-axi fetch "/Meeting Notes/Weekly" --as svg --pages 2 --fit content',
-          'remarkable-axi fetch "/Papers/Draft.pdf" --as pdf',
-          'remarkable-axi fetch "/Quick sheets" --as text',
-        ],
+          "Show known reMarkable models with screen specs and PDF page sizes",
+        examples: ["remarkable-axi devices"],
       },
     ],
   },
@@ -164,7 +143,8 @@ export const COMMAND_GROUPS: CommandGroup[] = [
       },
       {
         usage: "doctor",
-        summary: "Check pairing, connectivity, and account reachability",
+        summary:
+          "Check pairing, connectivity, external tools, duplicate paths, and the cache",
         flags: [
           "--rebuild  discard the cached tree and rebuild it from scratch",
         ],
@@ -232,6 +212,11 @@ export function renderTopLevelHelp(): string {
   ];
 
   for (const group of COMMAND_GROUPS) {
+    // A group can be declared with no commands yet — see the `Design` group
+    // above — so it stays out of the printed listing until something lands
+    // in it, rather than showing an empty header or crashing on Math.max().
+    if (group.commands.length === 0) continue;
+
     lines.push("", `${group.group}:`);
     const width = Math.max(
       ...group.commands.map((c) => c.usage.length),

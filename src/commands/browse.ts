@@ -6,6 +6,7 @@ import { age } from "../time.js";
 import { bool, parseFlags, str, requirePositional } from "../flags.js";
 import {
   buildTree,
+  duplicatePaths,
   listChildren,
   lookup,
   normalizePath,
@@ -18,11 +19,20 @@ function kind(node: Node): string {
   return node.entry.fileType;
 }
 
-function row(node: Node) {
+/** The short id to disambiguate a node, when its path collides with a sibling's. */
+function duplicateMark(
+  node: Node,
+  dups: Map<string, Node[]>,
+): { duplicate: string } | Record<string, never> {
+  return dups.has(node.path) ? { duplicate: node.entry.id.slice(0, 8) } : {};
+}
+
+function row(node: Node, dups: Map<string, Node[]>) {
   return {
     type: kind(node),
     name: node.entry.visibleName,
     modified: age(node.entry.lastModified),
+    ...duplicateMark(node, dups),
   };
 }
 
@@ -31,6 +41,7 @@ export async function ls(args: string[]): Promise<Output> {
   const path = normalizePath(parsed.positional[0] ?? "/");
   const api = await client();
   const tree = buildTree((await loadTree(api)).entries);
+  const dups = duplicatePaths(tree);
 
   if (bool(parsed, "--all")) {
     const all = [...tree.byId.values()]
@@ -40,16 +51,21 @@ export async function ls(args: string[]): Promise<Output> {
     if (all.length === 0) {
       return {
         documents: "0 documents in this account",
-        help: ["Run `remarkable-axi send <url> --dir /Articles` to add one"],
+        help: ['Run `remarkable-axi put <file> /Articles` to add one'],
       };
     }
 
+    const dupCount = new Set(
+      all.filter((n) => dups.has(n.path)).map((n) => n.path),
+    ).size;
+
     return {
-      count: `${all.length} documents`,
+      count: `${all.length} documents${dupCount > 0 ? `, ${dupCount} duplicated paths` : ""}`,
       documents: all.map((n) => ({
         type: kind(n),
         path: n.path,
         modified: age(n.entry.lastModified),
+        ...duplicateMark(n, dups),
       })),
     };
   }
@@ -68,7 +84,6 @@ export async function ls(args: string[]): Promise<Output> {
       path,
       items: `0 items in ${path}`,
       help: [
-        `Run \`remarkable-axi send <url> --dir ${path}\` to add an article`,
         `Run \`remarkable-axi put <file> ${path}\` to upload a document`,
       ],
     };
@@ -77,16 +92,21 @@ export async function ls(args: string[]): Promise<Output> {
   const folders = children.filter(
     (n) => n.entry.type === "CollectionType",
   ).length;
+  const dupCount = new Set(
+    children.filter((n) => dups.has(n.path)).map((n) => n.path),
+  ).size;
 
   return {
     path,
-    count: `${children.length} items (${folders} folders, ${children.length - folders} documents)`,
-    items: children.map(row),
+    count:
+      `${children.length} items (${folders} folders, ${children.length - folders} documents)` +
+      (dupCount > 0 ? `, ${dupCount} duplicated names` : ""),
+    items: children.map((n) => row(n, dups)),
     help: [
       children.some((n) => n.entry.type === "CollectionType")
         ? `Run \`remarkable-axi ls ${path === "/" ? "" : path}/<folder>\` to descend`
         : undefined,
-      `Run \`remarkable-axi send <url> --dir ${path}\` to add an article`,
+      `Run \`remarkable-axi put <file> ${path}\` to upload a document`,
     ].filter(Boolean) as string[],
   };
 }
@@ -130,6 +150,7 @@ export async function find(args: string[]): Promise<Output> {
 
   const api = await client();
   const tree = buildTree((await loadTree(api)).entries);
+  const dups = duplicatePaths(tree);
 
   const hits = [...tree.byId.values()]
     .filter((n) => {
@@ -149,16 +170,21 @@ export async function find(args: string[]): Promise<Output> {
   }
 
   const shown = hits.slice(0, limit);
+  const dupCount = new Set(
+    shown.filter((n) => dups.has(n.path)).map((n) => n.path),
+  ).size;
 
   return {
     count:
-      hits.length > shown.length
+      (hits.length > shown.length
         ? `${shown.length} of ${hits.length} matches`
-        : `${hits.length} matches`,
+        : `${hits.length} matches`) +
+      (dupCount > 0 ? `, ${dupCount} duplicated names` : ""),
     results: shown.map((n) => ({
       type: kind(n),
       path: n.path,
       modified: age(n.entry.lastModified),
+      ...duplicateMark(n, dups),
     })),
     // Spread rather than assigning undefined — an undefined value serializes
     // as an explicit `help: null`, which reads as "there is no help here"

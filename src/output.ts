@@ -18,3 +18,12 @@ export function collapseHome(path: string): string {
   }
   return path;
 }
+
+/** Render a byte count the way a human reads it: `319KB`, `1.2MB`. */
+export function humanSize(bytes: number): string {
+  return bytes < 1024
+    ? `${bytes}B`
+    : bytes < 1024 * 1024
+      ? `${Math.round(bytes / 1024)}KB`
+      : `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+}

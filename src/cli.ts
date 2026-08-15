@@ -9,12 +9,16 @@ import { home } from "./commands/home.js";
 import { ls, find } from "./commands/browse.js";
 import { devices } from "./commands/devices.js";
 import { page } from "./commands/page.js";
-import { fetch as fetchCmd } from "./commands/fetch.js";
-import { send, put } from "./commands/send.js";
-import { replace } from "./commands/replace.js";
+import { put } from "./commands/put.js";
+import { get } from "./commands/get.js";
 import { mkdir, mv, rm } from "./commands/organize.js";
 import { login, doctor, setup } from "./commands/setup.js";
 import { version } from "./version.js";
+// Retired verbs, kept only as targeted redirects — see
+// specs/commands/README.md#deprecations.
+import { send } from "./commands/send.js";
+import { replace } from "./commands/replace.js";
+import { fetch as fetchCmd } from "./commands/fetch.js";
 
 /**
  * Error codes that represent a malformed invocation rather than a failed
@@ -44,20 +48,23 @@ export async function main(argv: string[] = process.argv.slice(2)) {
     getCommandHelp: renderCommandHelp,
     home,
     commands: {
+      put,
+      get,
       ls,
       find,
       devices,
       page,
-      fetch: fetchCmd,
-      send,
-      put,
-      replace,
       mkdir,
       mv,
       rm,
       login,
       doctor,
       setup,
+      // Retired verbs — registered so invoking them by name still produces a
+      // targeted redirect instead of a generic unknown-command error.
+      send,
+      replace,
+      fetch: fetchCmd,
     },
     formatError: (error) => {
       if (error instanceof AxiError) {

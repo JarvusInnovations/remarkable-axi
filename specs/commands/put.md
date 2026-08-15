@@ -52,6 +52,13 @@ non-zero — and names the two real intents. There is no flag that lands a secon
 document at an occupied path. See
 [path-uniqueness](../behaviors/path-uniqueness.md).
 
+**Occupied is judged on the resolved final path**, not on whether `<dest>` itself
+named a document. Landing in a folder derives a name from `--name` or the source, and
+if that name collides with a sibling the result is two documents at one path just the
+same — so it refuses identically. This fires on the common folder-landing flow, which
+is intended: the alternative is a tool that prevents duplicates only in the case the
+user was already being explicit about.
+
 ## Replacing
 
 `--replace` uploads the new document, then moves the superseded one to trash under a
