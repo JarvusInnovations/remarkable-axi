@@ -6,7 +6,8 @@ import { collapseHome } from "../output.js";
 import { client } from "../auth.js";
 import { bool, parseFlags, requirePositional, str } from "../flags.js";
 import { buildTree, lookup, normalizePath } from "../paths.js";
-import { listEntries, pdfPageIndexes } from "../entries.js";
+import { loadTree } from "../cache.js";
+import { pdfPageIndexes } from "../entries.js";
 import { optimizeForReading, pageGeometry, type PageGeometry } from "../strokes.js";
 import { pagesToPdf, pageToSvg, overlayOnPdf, pdfPageCount, type Fit } from "../render.js";
 import { readConfig } from "../config.js";
@@ -122,7 +123,7 @@ export async function fetch(args: string[]): Promise<Output> {
   const fit = fitRaw as Fit;
 
   const api = await client();
-  const tree = buildTree((await listEntries(api)).entries);
+  const tree = buildTree((await loadTree(api)).entries);
   const node = lookup(tree, path);
   if (!node) {
     throw new AxiError(`no such document: ${path}`, "NOT_FOUND", [

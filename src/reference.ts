@@ -165,7 +165,10 @@ export const COMMAND_GROUPS: CommandGroup[] = [
       {
         usage: "doctor",
         summary: "Check pairing, connectivity, and account reachability",
-        examples: ["remarkable-axi doctor"],
+        flags: [
+          "--rebuild  discard the cached tree and rebuild it from scratch",
+        ],
+        examples: ["remarkable-axi doctor", "remarkable-axi doctor --rebuild"],
       },
       {
         usage: "setup device <model>",

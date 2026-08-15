@@ -1,12 +1,22 @@
 import { extname, basename } from "node:path";
 import { readFile, stat } from "node:fs/promises";
 import { AxiError } from "axi-sdk-js";
+import type { Entry } from "rmapi-js";
 import type { Output } from "../output.js";
 import { client } from "../auth.js";
-import { listEntries } from "../entries.js";
+import { loadTree, recordMutation } from "../cache.js";
 import { parseFlags, str, requirePositional } from "../flags.js";
-import { buildTree, mkdirp, normalizePath } from "../paths.js";
+import { buildTree, mkdirp, normalizePath, type Tree } from "../paths.js";
 import { articleToEpub, documentName } from "../article.js";
+
+/** The new document plus any freshly-created ancestor folders, for the cache. */
+function uploaded(
+  tree: Tree,
+  created: string[],
+  entry: Entry,
+): Entry[] {
+  return [...created.map((p) => tree.byPath.get(p)!.entry), entry];
+}
 
 function kb(bytes: number): string {
   return bytes < 1024
@@ -38,14 +48,28 @@ export async function send(args: string[]): Promise<Output> {
   const { name, buffer, article } = await articleToEpub(url, titleOverride);
 
   const api = await client();
-  const tree = buildTree((await listEntries(api)).entries);
+  const tree = buildTree((await loadTree(api)).entries);
   const { id: parent, created } = await mkdirp(api, tree, dir);
 
-  await api.putEpub(name, buffer, {
+  const ref = await api.putEpub(name, buffer, {
     parent,
     title: article.title,
     ...(article.byline ? { authors: [article.byline] } : {}),
     publicationDate: new Date().toISOString(),
+  });
+
+  await recordMutation(api, {
+    upsert: uploaded(tree, created, {
+      id: ref.id,
+      hash: ref.hash,
+      type: "DocumentType",
+      fileType: "epub",
+      visibleName: name,
+      lastModified: new Date().toISOString(),
+      lastOpened: "",
+      pinned: false,
+      parent,
+    } as Entry),
   });
 
   return {
@@ -112,7 +136,7 @@ export async function put(args: string[]): Promise<Output> {
   );
 
   const api = await client();
-  const tree = buildTree((await listEntries(api)).entries);
+  const tree = buildTree((await loadTree(api)).entries);
   const { id: parent, created } = await mkdirp(api, tree, dir);
 
   // The cloud happily stores two documents with the same name in one folder,
@@ -122,11 +146,24 @@ export async function put(args: string[]): Promise<Output> {
     (n) => (n.entry.parent ?? "") === parent && n.entry.visibleName === name,
   ).length;
 
-  if (ext === ".pdf") {
-    await api.putPdf(name, buffer, { parent });
-  } else {
-    await api.putEpub(name, buffer, { parent });
-  }
+  const ref =
+    ext === ".pdf"
+      ? await api.putPdf(name, buffer, { parent })
+      : await api.putEpub(name, buffer, { parent });
+
+  await recordMutation(api, {
+    upsert: uploaded(tree, created, {
+      id: ref.id,
+      hash: ref.hash,
+      type: "DocumentType",
+      fileType: ext === ".pdf" ? "pdf" : "epub",
+      visibleName: name,
+      lastModified: new Date().toISOString(),
+      lastOpened: "",
+      pinned: false,
+      parent,
+    } as Entry),
+  });
 
   return {
     uploaded: { name, dir, size: kb(size), format: ext.slice(1) },
