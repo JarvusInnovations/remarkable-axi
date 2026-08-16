@@ -54,6 +54,17 @@ without touching disk — useful in CI and containers.
 
 Verify with `remarkable-axi doctor`.
 
+Then install the session hooks and set the device you design for — two commands
+that make every later session cheaper:
+
+```sh
+remarkable-axi setup hooks
+remarkable-axi setup device rm2     # or paper-pro, rm1, paper-pro-move, paper-pure
+```
+
+See [Agent integration](#agent-integration) for what the hooks do and where
+they are written.
+
 ## Commands
 
 | Command | Description |
@@ -177,9 +188,63 @@ part is real.
 
 ## Agent integration
 
-`remarkable-axi setup hooks` registers a SessionStart hook so an agent begins
-every session already knowing what's on the tablet, with no invocation needed.
-Claude Code and Codex get native hooks; OpenCode gets a managed plugin.
+### Install the hooks — this is the point
+
+```sh
+remarkable-axi setup hooks
+```
+
+Run it once. Every agent session afterwards opens already knowing what is on
+your tablet, without you asking and without the agent spending a turn to find
+out:
+
+```
+bin: ~/.local/share/npm/bin/remarkable-axi
+description: Send documents to a reMarkable tablet, design pages for its panel, …
+status: paired, 686 documents, 115 folders
+target:
+  name: reMarkable 2
+  model: RM110
+  screen: 1404x1872
+  dpi: 226
+  pagePt: 447x596pt
+recent[8]{type,path,modified}:
+  notebook,/Meeting Notes/Weekly,2h ago
+  pdf,/Papers/Attention Is All You Need,1d ago
+  ...
+help[3]:
+  Run `remarkable-axi ls --all` for all 686 documents
+  Run `remarkable-axi put "<url>" /Articles` to send a web article
+  Run `remarkable-axi ls <path>` to browse a folder
+```
+
+That changes what the agent can do unprompted. "Put my notes from yesterday on
+the tablet" needs no explanation of what a tablet is or which tool talks to it,
+because the folder names and the page box are already in context. Without the
+hook, the agent has to guess a tool exists, then spend a turn discovering it.
+
+Pair `setup hooks` with `setup device <model>` — the target device's page box
+is what `render` and `check` design against, and it rides along in the same
+block.
+
+**What it writes**, idempotently, only for the agents you actually have:
+
+| Agent | File |
+| --- | --- |
+| Claude Code | `~/.claude/settings.json` — a `SessionStart` hook entry |
+| Codex | `~/.codex/config.toml` and `~/.codex/hooks.json` |
+| OpenCode | a managed plugin under `~/.config/opencode/plugins/` |
+
+Re-running is safe; it reports "installed or already up to date" and rewrites
+nothing that is already correct.
+
+**The hook has a hard timeout** — ten seconds in the reference configuration —
+and an overrunning hook produces *no output at all*, which looks like having no
+context rather than slow context. That is why the tree is cached against the
+sync API's root generation rather than fetched fresh: the ambient view has to
+fit a budget it cannot negotiate. See the cache note below.
+
+### What an agent gets
 
 Every cloud call has a 120s deadline, so a stalled request fails with a
 structured `TIMEOUT` naming the operation instead of hanging silently. Set

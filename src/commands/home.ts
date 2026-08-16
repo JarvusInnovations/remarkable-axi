@@ -110,10 +110,12 @@ export async function home(): Promise<Output> {
   // rather than showing nothing: the whole point of the cache is that it's
   // already available for free.
   const changedIds = new Set(result.changed.map((e) => e.id));
-  const pool =
-    changedIds.size > 0
-      ? documents.filter((n) => changedIds.has(n.entry.id))
-      : documents;
+  const changedDocuments = documents.filter((n) => changedIds.has(n.entry.id));
+  // Fall back on an empty *pool*, not on an empty changed set. A delta can be
+  // non-empty and still contain no document that survives into the tree —
+  // deleting a document is a change whose entry is then excluded as trashed,
+  // which left the section blank on an account holding hundreds of files.
+  const pool = changedDocuments.length > 0 ? changedDocuments : documents;
 
   const recent = [...pool]
     .sort((a, b) => recencyKey(b.entry.lastModified) - recencyKey(a.entry.lastModified))
