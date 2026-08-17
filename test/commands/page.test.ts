@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import { AxiError } from "axi-sdk-js";
 import { page } from "../../src/commands/page.js";
 import { cssBlock } from "../../src/page.js";
+import { CHECK_ITERATE_HINT } from "../../src/hints.js";
 
 // Every case here passes --device explicitly, so the command never reads
 // (or writes) the config file — these tests are hermetic regardless of the
@@ -49,16 +50,17 @@ describe("page command", () => {
     expect(landscapeCss.css).toBe(cssBlock({ width: 596, height: 447 }));
   });
 
-  test("the plain form hints at --css for a paste-ready block", async () => {
+  test("the plain form hints at --css for a paste-ready block, then the check hint", async () => {
     const output = await page(["--device", "rm2"]);
     expect(output.help).toEqual([
       "Run `remarkable-axi page --css` for a paste-ready `@page` block",
+      CHECK_ITERATE_HINT,
     ]);
   });
 
-  test("--css does not repeat the hint that got the reader there", async () => {
+  test("--css skips the --css hint but still ends with the check hint", async () => {
     const output = await page(["--device", "rm2", "--css"]);
-    expect(output.help).toBeUndefined();
+    expect(output.help).toEqual([CHECK_ITERATE_HINT]);
   });
 
   test("--device overrides per invocation without requiring stored config", async () => {
