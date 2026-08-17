@@ -1,11 +1,12 @@
 ---
-status: planned
+status: done
 depends: [put-html-source]
 specs:
   - specs/behaviors/design-loop.md
   - specs/commands/page.md
   - specs/commands/check.md
 issues: []
+pr: 36
 ---
 
 # Teach the design loop through the tool's own hints
@@ -58,14 +59,14 @@ No enforcement anywhere: hints only, per the behavior's local principle.
 
 ## Validation
 
-- [ ] Home view help includes the `page --css` design entry line
-- [ ] `page` and `page --css` both end with the check hint
-- [ ] `check` with images emits the eye-pass hint naming a real written image path,
+- [x] Home view help includes the `page --css` design entry line
+- [x] `page` and `page --css` both end with the check hint
+- [x] `check` with images emits the eye-pass hint naming a real written image path,
       and the put hint carrying the checked file
-- [ ] `check --no-images` emits neither eye-pass nor put hint
-- [ ] A landscape page (device box transposed) produces the self-explaining finding,
+- [x] `check --no-images` emits neither eye-pass nor put hint
+- [x] A landscape page (device box transposed) produces the self-explaining finding,
       not a raw delta; a genuinely mismatched box still produces the signed delta
-- [ ] All hint strings live in/derive from `reference.ts`-adjacent single source —
+- [x] All hint strings live in/derive from `reference.ts`-adjacent single source —
       no duplicated wording in command modules
 
 ## Risks / unknowns
@@ -77,8 +78,40 @@ No enforcement anywhere: hints only, per the behavior's local principle.
 
 ## Notes
 
-(Populated at closeout.)
+Hint text landed in a new `src/hints.ts` (`DESIGN_ENTRY_HINT`, `CHECK_ITERATE_HINT`,
+`eyePassHint()`, `putHint()`), kept beside `reference.ts` rather than folded into it —
+`reference.ts` is the command-surface (usage/flags/`--help`) single source, and this
+module is the analogous single source for this one behavior's runtime hint content.
+
+`check`'s help composition: eye-pass and put now fire whenever images were written,
+regardless of source type (PDF or HTML) — the HTML-only re-check hint is unchanged and
+now lands last rather than replacing the other two. Order in the array: eye-pass,
+`--full-res` escape hatch (when applicable), put, re-check.
+
+The transposed-box wording lives in `pageBoxFinding` (`src/lint/geometry.ts`), the
+finding-text builder `check` alone calls — not in the shared `describeDelta`/
+`detectPageBox` (`src/page.ts`). `render`'s `page:` disposition line and `check`'s own
+`page_box:` summary line both call `describeDelta` directly and are unchanged, so
+`specs/behaviors/page-geometry.md`'s "shared rule, two dispositions" guarantee holds:
+only the per-page `page box` *finding* gets the new wording.
+
+`check.md`'s worked output example shows the HTML-only re-check hint attached to a
+`flyer.pdf` filename — that predates this change and is an artifact of the doc's
+illustrative filenames already being inconsistent (mixing `flyer.pdf`/`flyer.html`
+across revisions), not a signal that re-check should fire for PDFs. Implemented per
+the plan's explicit approach instead: re-check stays HTML-source-only.
+
+All validation boxes verified via automated tests plus manual local smoke tests of
+`page`, `page --css`, and `check` against a hand-built landscape HTML fixture — no
+cloud calls made, per this task's paired-real-device safety rule.
+
+`bun run check` and `bun run build` are clean. `bun run test`: 380 passed, 2 failed —
+both failures are `"no device target and no --device fails NO_DEVICE"` in
+`check.test.ts` and `render.test.ts`, the pre-existing environmental issue tracked as
+issue #34, present on `develop` before this branch and unrelated to this change.
+
+PR: <https://github.com/JarvusInnovations/remarkable-axi/pull/36> (open, not merged).
 
 ## Follow-ups
 
-(Populated at closeout.)
+None identified.
