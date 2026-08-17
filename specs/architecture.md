@@ -49,6 +49,13 @@ documentation cannot drift from the surface it documents.
 
 Adding or changing a command means changing `reference.ts` first.
 
+Help output is itself output: the top-level listing and every `--help` block are
+TOON, the same as every other response — `usage:`, `commands[n]:`, `flags:`,
+`examples:` as TOON keys, never a prose manpage, and never a mix of the two in one
+response. String-list values such as `help[]` arrays emit in **block form** (one
+line per entry) rather than inline, so entries never need comma-and-quote escaping
+and stay readable at any length.
+
 ## Local state
 
 `~/.config/remarkable-axi/` holds:
