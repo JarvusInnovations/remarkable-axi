@@ -1,5 +1,6 @@
 ---
-status: in-progress
+status: done
+pr: 43
 depends: [device-reattach]
 specs:
   - specs/behaviors/device-access.md
@@ -44,17 +45,17 @@ user document. Pending-sync probing is read-only and time-boxed.
 
 ## Validation
 
-- [ ] `STATUS_COMMAND` runs clean on firmware 3.28 (no update.conf) and reports
+- [x] `STATUS_COMMAND` runs clean on firmware 3.28 (no update.conf) and reports
       the IMG_VERSION
-- [ ] Non-255 remote exits surface as `REMOTE_FAILED` with stderr; 255 stays
+- [x] Non-255 remote exits surface as `REMOTE_FAILED` with stderr; 255 stays
       `DEVICE_UNREACHABLE`; changed-key refusal names the changed key
-- [ ] Live: `device status` returns the spec's fields against the real tablet
-- [ ] Live: `device orphans` sweeps the real account; zero-stroke files
+- [x] Live: `device status` returns the spec's fields against the real tablet
+- [x] Live: `device orphans` sweeps the real account; zero-stroke files
       reported as counts
-- [ ] Live: `device backup` archives a real document; archive verified locally
+- [x] Live: `device backup` archives a real document; archive verified locally
 - [ ] Live drill: planted orphan detected, reattached via `--map`, ink visible
       and syncing; no user document touched
-- [ ] Pending-sync detectability measured and findings recorded
+- [x] Pending-sync detectability measured and findings recorded
 
 ## Risks / unknowns
 
@@ -63,8 +64,29 @@ user document. Pending-sync probing is read-only and time-boxed.
 
 ## Notes
 
-(Populated at closeout.)
+- Landed across two PRs: #43 (host-key TOFU + changed-key refusal, 255-vs-other
+  exit classification, guarded `STATUS_COMMAND` with `IMG_VERSION` fallback) and
+  #44 (end-anchored BusyBox `df` parsing, 64MB text-exec `maxBuffer`, 300s dump
+  budget sized from a live 73s / ~6MB measurement on a 910-document account).
+  Each budget/format fix carries its measurement in a doc comment.
+- Live results: status fully populated; full-account orphan sweep clean (783
+  documents, zero orphans — both prior incidents' orphans were consumed by
+  their recoveries); a real document's backup archived and verified locally.
+- Pending-sync: no `synced` metadata fields and no sync-state dir on 3.28, but
+  `journalctl -u xochitl` names documents in pending-upload lines — observed
+  live against a document holding unsynced ink. Full findings on issue #21;
+  spec updated to "signal measured, mechanism not yet asserted".
+- The drill's remote writes (`mkdir`/`scp` as root on the tablet) are blocked
+  by the session permission classifier; reads were always permitted. The drill
+  document is staged on-device ready for a session with that permission.
 
 ## Follow-ups
 
-(Populated at closeout.)
+- Issue [#45](https://github.com/JarvusInnovations/remarkable-axi/issues/45) —
+  the live reattach drill (staged, blocked on device writes + reachability).
+- Tracked as: journal-based pending-sync gate — measurement recorded on
+  issue #21; needs completed-upload signature characterization before any spec
+  asserts a mechanism.
+- Issue [#34](https://github.com/JarvusInnovations/remarkable-axi/issues/34) —
+  unchanged, but noted: with real SSH config present, doctor's tests can now
+  live-probe a reachable tablet during unit runs (same isolation root cause).

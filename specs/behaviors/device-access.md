@@ -117,10 +117,16 @@ configured device connection is the one place that check could become
 blind-spot-free: before a replace, ask the *device* whether the target document's
 local state carries strokes or pending changes the cloud hasn't seen.
 
-**Status: desired, unverified.** Whether pending-sync state is reliably detectable
-device-side has not been measured on hardware, and per
+**Status: desired; signal measured, mechanism not yet asserted.** First hardware
+contact (firmware 3.28) found no sync fields in `.metadata` and no sync-state
+directory, but `journalctl -u xochitl` names individual documents in
+pending-upload and sync-transition lines — a real per-document signal, observed
+live on a document holding unsynced ink. Log-format stability across firmware
+and the completed-upload signature are uncharacterized
+([#21](https://github.com/JarvusInnovations/remarkable-axi/issues/21) carries the
+measurement), so per
 [Measure the device; never ship a guessed constant](../principles.md#measure-the-device-never-ship-a-guessed-constant)
-this spec does not assert a mechanism. It records the intent: when a device
+this spec still does not assert a mechanism. It records the intent: when a device
 connection is configured, `put --replace` extends its ink check to the device; when
 none is configured, the cloud-only check applies and says so.
 
