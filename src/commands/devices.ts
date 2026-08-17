@@ -55,7 +55,7 @@ export async function devices(args: string[]): Promise<Output> {
         ? "Run `remarkable-axi setup device <model>` to change the target"
         : "Run `remarkable-axi setup device <model>` so the target shows in every session",
       "`pagePt` is the full-bleed portrait page size to generate PDFs at",
-      "`calibration` is `calibrated` only where the numbers were measured on hardware — see `specs/behaviors/device-calibration.md`",
+      "`calibration` is `calibrated` only where the numbers were measured on real hardware; other models carry declared specs",
     ],
   };
 }

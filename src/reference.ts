@@ -83,7 +83,7 @@ export const COMMAND_GROUPS: CommandGroup[] = [
           "Send a local PDF/EPUB or a URL to the tablet — source first, destination last",
         flags: [
           "--name <name>    document name shown on the device (default: derived from source)",
-          "--replace        swap the contents of the document already at <dest>",
+          "--replace        swap the contents of the document already at <dest> (uploads first, then trashes the old copy under a dated name — the safe form of rm-then-put)",
           "--discard-ink    with --replace, proceed even though the target carries ink",
         ],
         examples: [

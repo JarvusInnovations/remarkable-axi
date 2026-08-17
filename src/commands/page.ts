@@ -37,6 +37,10 @@ export async function page(args: string[]): Promise<Output> {
 
   if (bool(parsed, "--css")) {
     output.css = cssBlock(box);
+  } else {
+    output.help = [
+      "Run `remarkable-axi page --css` for a paste-ready `@page` block",
+    ];
   }
 
   return output;
