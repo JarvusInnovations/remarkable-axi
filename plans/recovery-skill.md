@@ -1,5 +1,6 @@
 ---
-status: planned
+status: done
+pr: 39
 depends: []
 specs:
   - specs/skill.md
@@ -51,13 +52,22 @@ to CLI behavior.
 ## Validation
 
 - [ ] `npx skills add` from the repo installs the skill with SKILL.md and both
+      reference files — structure matches the axi-skills recipe (`skills/<name>/`
+      + `references/`) but a live `npx skills add` against the pushed branch was
+      not exercised; see Notes
+- [x] CI fails when SKILL.md's generated region is stale against `reference.ts`
+      — verified directly: staled one line of the generated region, ran
+      `bun run check:skill`, confirmed exit 1 with the stale-region message,
+      restored, confirmed exit 0 clean; the same script is now wired into
+      `.github/workflows/ci.yml`
+- [x] The playbook contains no reference to any unshipped command — the one
+      mention of `remarkable-axi device` in ink-recovery.md explicitly says
+      those commands don't exist yet; no invocation example uses them
+- [x] Every command example in the skill runs via `npx -y remarkable-axi` without
+      a global install — grepped every example across SKILL.md and both
       reference files
-- [ ] CI fails when SKILL.md's generated region is stale against `reference.ts`
-- [ ] The playbook contains no reference to any unshipped command
-- [ ] Every command example in the skill runs via `npx -y remarkable-axi` without
-      a global install
 - [ ] Description optimization run; final description beats the draft on the
-      held-out trigger set
+      held-out trigger set — see Notes
 
 ## Risks / unknowns
 
@@ -68,8 +78,56 @@ to CLI behavior.
 
 ## Notes
 
-(Populated at closeout.)
+- **Skill is npm-published, not bundled.** `remarkable-axi` already ships to
+  npm, so unlike the axi-skills recipe's default (a committed self-contained
+  `.mjs` bundle under `scripts/`), this skill has no CLI to bundle — every
+  example invokes the published package via `npx -y remarkable-axi …`, the
+  same model the `lavish` skill uses. `src/skill.ts` + `scripts/build-skill.ts`
+  still implement the recipe's marker-splice generation and `--check` drift
+  gate for the command-reference region, just with a simpler artifact set.
+- **Description-optimization attempt, and why the box is unchecked.** Ran
+  skill-creator's `run_loop.py` (20 hand-written should/should-not-trigger
+  queries, `--model claude-fable-5`, `--max-iterations 3`) against the draft
+  description. Iteration 1 completed and measured **0% recall on both the
+  original description and its own first proposed replacement** — including
+  on unambiguous positive queries like "Send this PDF to my reMarkable
+  tablet" — which reads as a harness/environment issue (nested `claude -p`
+  skill-triggering not reliably observable under this sandbox) rather than a
+  real description defect; a well-matched pushy description failing 0/3 on
+  an unambiguous case isn't a plausible true negative. The run was killed
+  before a completed, test-scored iteration existed, so there is no
+  before/after score to report. The final description was hand-tightened
+  afterward using the run's own iteration-1 proposal as a starting point
+  (explicit inclusion list, an immediate-trigger clause for ink-loss
+  symptoms, explicit do-not-use exclusions for adjacent devices/domains) —
+  editorially reasonable, but not a scored best-of-N pick, so the Validation
+  box stays unchecked rather than claiming a result that wasn't measured.
+- **Tooling side effect, caught and cleaned up.** `run_eval.py` resolves its
+  "project root" by walking up from cwd looking for a `.claude/` directory;
+  invoked from `~/.claude/skills/skill-creator`, that walk lands on
+  `~/.claude` itself, so its per-query command files landed in the **global**
+  `~/.claude/commands/` (not a repo-local or worktree-scoped path) as
+  `remarkable-axi-skill-<hash>.md`. Confirmed and swept twice — the second
+  sweep after force-killing (`pkill -9`) the still-running optimizer, whose
+  killed workers skipped their own cleanup `finally` block. Final state
+  verified clean: `find ~/.claude/skills ~/.claude/commands /tmp -maxdepth 5
+  -iname "*remarkable-axi-skill*"` returns zero hits. Nothing repo-local was
+  touched by the leak; `skills/remarkable-axi/` in this worktree was never at
+  risk.
+- Full CI evidence, description text, and cleanup verification are in PR #39.
 
 ## Follow-ups
 
-(Populated at closeout.)
+- Run `npx skills add JarvusInnovations/remarkable-axi --skill remarkable-axi`
+  against the merged repo at least once to confirm the live install path
+  actually works end to end (the first Validation box above) — not done in
+  this plan since it needs the branch merged/pushed to a resolvable ref.
+- Complete a real description-optimization pass once `run_loop.py` can be run
+  to a finished, test-scored iteration in an environment where nested
+  `claude -p` skill-triggering is reliably observable (or from a location
+  whose `.claude/` walk doesn't resolve to the global config dir) — compare
+  against the current hand-tightened description rather than assuming it's
+  already optimal.
+- [`device-reattach`](device-reattach.md) absorbs the `device` command group
+  into `references/ink-recovery.md` once it ships, per this plan's declared
+  out-of-scope boundary.
