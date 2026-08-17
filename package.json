@@ -29,7 +29,9 @@
   },
   "scripts": {
     "build": "bun scripts/build.ts",
+    "build:skill": "bun scripts/build-skill.ts",
     "check": "tsc --noEmit",
+    "check:skill": "bun scripts/build-skill.ts --check",
     "prepublishOnly": "bun scripts/build.ts",
     "test": "vitest run",
     "dev": "bun bin/remarkable-axi.ts",
