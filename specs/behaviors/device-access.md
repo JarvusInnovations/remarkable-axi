@@ -47,6 +47,16 @@ system's own `ssh`:
   client, so everything `~/.ssh/config` can express (aliases, ProxyJump chains,
   IdentityFile) works without the tool knowing about it.
 
+**First contact trusts, changed keys refuse.** The tool passes
+`StrictHostKeyChecking=accept-new`: an unknown host key (a first connection, or a
+re-flashed device) is recorded and trusted, because refusing it under
+`BatchMode` yields only a mute failure no agent can act on — while a **changed**
+key, the case that actually signals interception, still refuses loudly and the
+error says the key changed rather than "unreachable". A remote command that runs
+and fails is likewise distinguished from a connection that never succeeded: only
+ssh's own transport failure reads as unreachable; the command's own non-zero exit
+surfaces as what it is, with its stderr.
+
 **Auth is key-based, full stop.** The tool never handles the device password — no
 interactive prompts is AXI law, and a password inline in a command is worse. When
 auth fails, the error explains the one-time manual step: read the password off the

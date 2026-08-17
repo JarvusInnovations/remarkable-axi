@@ -128,7 +128,8 @@ guesses a mapping.
 | --- | --- |
 | no destination configured and no `--ssh` | `NO_DEVICE_SSH`, naming `setup ssh` |
 | ssh binary not found | `MISSING_TOOL`, naming what to install and that `doctor` checks it |
-| destination unreachable / auth failed | `DEVICE_UNREACHABLE`, with the key-install steps on auth failure |
+| destination unreachable / auth failed / host key changed | `DEVICE_UNREACHABLE`, with the key-install steps on auth failure and a changed-key callout when that is the cause |
+| connected, but the remote command failed | `REMOTE_FAILED`, surfacing the remote stderr |
 | `<path>` matches nothing on the device | `NOT_FOUND` |
 | `<path>` matches several documents | `AMBIGUOUS`, listing uuids |
 | `backup`'s archive destination exists | `EXISTS` unless `--force` |
