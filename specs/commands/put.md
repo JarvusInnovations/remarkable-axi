@@ -95,6 +95,20 @@ that is [ink-preservation](../behaviors/ink-preservation.md).
 A failed upload leaves the original untouched: the new document lands first, and the
 old one is trashed only after the upload is confirmed.
 
+### `rm` then `put` is the same intent in the unsafe order
+
+Agents reach for `rm` followed by a fresh `put` believing it guarantees a clean
+replacement. `--replace` *is* that motion, made safe: the upload is confirmed before
+anything is trashed, the superseded copy is renamed with a date so it stays findable,
+and the ink refusal gets its chance to fire. The rm-first order trashes the original
+before its replacement exists and skips all three protections.
+
+Because the agent planning rm-then-put never hits the occupied-destination refusal
+(the path is empty by the time `put` runs), the teaching has to happen earlier:
+`--replace`'s own flag description states the safe ordering, and `rm`'s success
+output on a document offers `put <src> <path> --replace` as the one-step form for
+replacement intent.
+
 ## HTML sources and page geometry
 
 An HTML source is rendered at the device page box, with `@page` detection and the

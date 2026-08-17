@@ -1,6 +1,6 @@
 ---
 status: planned
-depends: []
+depends: [put-html-source]
 specs:
   - specs/behaviors/design-loop.md
   - specs/commands/page.md
@@ -38,11 +38,18 @@ All hint text lands in or beside `src/reference.ts` so the single-source rule ho
 the home-view hint joins the standing suggestions the home view already emits, and
 the per-command hints are emitted by their commands' output paths.
 
-- Home view: add the design entry line to the standing help suggestions.
+- Home view: add the design entry line to the standing help suggestions — in the
+  populated branch *and* the paired-zero-documents branch (an empty tablet is a
+  prime candidate for a designed page).
+- Depends on [`put-html-source`](put-html-source.md): the chain's `put` hint
+  carries the checked HTML file forward, which today `put` refuses — the hint must
+  never point at a command that fails.
 - `page`: append the check hint to both the plain and `--css` outputs.
 - `check`: when images were written, prepend the eye-pass hint naming the first
   image path, and append the put hint carrying the checked file as source with
-  `<dest>` as placeholder.
+  `<dest>` as placeholder. This replaces the current "Open the page images above"
+  line — and fixes a real gap: today an HTML source gets only the re-check hint and
+  is never pointed at its images at all.
 - Transposed box: in the page-box rule, detect width/height exactly swapped against
   the device box and emit the landscape wording from the spec instead of the raw
   signed delta.
