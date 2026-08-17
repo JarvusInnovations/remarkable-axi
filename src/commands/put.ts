@@ -20,6 +20,8 @@ import {
   type Node,
 } from "../paths.js";
 import { articleToEpub, documentName } from "../article.js";
+import { pageGeometry } from "../strokes.js";
+import { age } from "../time.js";
 import { render } from "./render.js";
 import { check } from "./check.js";
 
@@ -264,19 +266,51 @@ interface InkSummary {
  * Whether a document carries ink, and on how many of its pages — see
  * specs/behaviors/ink-preservation.md#warning-before-replacing-inked-documents.
  *
- * Answered from the document's own entry list: per-page `.rm` files exist
- * only for pages that have been drawn on, so counting entries whose id ends
- * `.rm` is a page count with no page content downloaded. That one request
- * covers the common case (no ink) outright. The total page count needed to
- * report "N of M" costs a second, equally small `.content` read — paid only
- * when there is ink to report on, since the happy path never needs it.
+ * A page's `.rm` entry existing is not proof of ink: the device creates one
+ * the moment a page is merely opened (or pen-hovered), with zero strokes
+ * inside, and counting those as ink fires the refusal on documents nobody
+ * wrote on (https://github.com/JarvusInnovations/remarkable-axi/issues/28).
+ * **A page counts as inked only when its stroke file holds at least one
+ * stroke.**
+ *
+ * Whether entry *size* alone could tell the two cases apart without a fetch
+ * was measured against the v6 `.rm` codec itself (`rmapi-js`'s writer, used
+ * directly rather than guessed): a minimal opened-but-undrawn page's
+ * scaffolding blocks (scene tree, layer, page-info, scene-info) serialize to
+ * ~176 bytes, ~209 with an author-id table, and the smallest possible real
+ * stroke — a single-point tap — adds only ~74 bytes on top of that. No real
+ * zero-stroke sample was available to bound how large the device's own
+ * scaffolding actually gets in practice (extra layers, undo/redo history, a
+ * larger author table on a multi-device doc), so that ~74-byte margin cannot
+ * be called safe. A wrong threshold would silently discard real ink — the
+ * worst failure available here — so size is not used to decide. Every
+ * candidate `.rm` entry is instead fetched and parsed, and `pageGeometry`
+ * (the same function `get --overlay` already trusts to answer "is there ink
+ * here", which is what #28 found disagreeing with this check) decides for
+ * real: one request per page that was at least opened, never on the common
+ * never-touched path, which still costs nothing.
  */
 async function detectInk(
   api: RemarkableApi,
   ref: ItemRef,
 ): Promise<InkSummary | null> {
   const { entries } = await api.raw.getEntries(ref);
-  const inkedPages = entries.filter((e) => e.id.endsWith(".rm")).length;
+  const candidates = entries.filter((e) => e.id.endsWith(".rm"));
+  if (candidates.length === 0) return null;
+
+  const carriesInk = await Promise.all(
+    candidates.map(async (entry) => {
+      try {
+        const page = await api.raw.getRm(entry);
+        return pageGeometry(page).strokes.length > 0;
+      } catch {
+        // Unreadable, not absent: refuse rather than silently dropping a
+        // page that might carry real ink from the count.
+        return true;
+      }
+    }),
+  );
+  const inkedPages = carriesInk.filter(Boolean).length;
   if (inkedPages === 0) return null;
 
   const contentEntry = entries.find((e) => e.id.endsWith(".content"));
@@ -385,6 +419,13 @@ export async function put(args: string[]): Promise<Output> {
       ]);
     }
 
+    // The ink check only ever sees the cloud's copy of the target — strokes
+    // written on-device since its last sync are invisible to it. Disclosed
+    // on every outcome rather than closed, since it cannot be closed from
+    // the cloud — see
+    // specs/behaviors/ink-preservation.md#cloud-checks-see-only-synced-ink.
+    const lastSynced = age(old.entry.lastModified);
+
     if (!bool(parsed, "--discard-ink")) {
       const ink = await detectInk(api, {
         id: old.entry.id,
@@ -392,7 +433,8 @@ export async function put(args: string[]): Promise<Output> {
       });
       if (ink) {
         throw new AxiError(
-          `${destPath} has ink on ${ink.inkedPages} of ${ink.totalPages} pages; --replace would discard it`,
+          `${destPath} has ink on ${ink.inkedPages} of ${ink.totalPages} pages; --replace would discard it\n` +
+            `last synced ${lastSynced} ago — ink written on-device since then is invisible to this check`,
           "HAS_INK",
           [
             `save it separately first — remarkable-axi get ${destPath} --overlay <file>.pdf`,
@@ -420,6 +462,7 @@ export async function put(args: string[]): Promise<Output> {
       ...(source.findings !== undefined ? { findings: source.findings } : {}),
       ...(source.url ? { source: source.url } : {}),
       ...(source.imagesFor ? { images_for: source.imagesFor } : {}),
+      last_synced: lastSynced,
       ...(trash.ok
         ? { backup: { trashed: trash.name, id: old.entry.id.slice(0, 8) } }
         : { warning: "the superseded document could not be moved to trash" }),
