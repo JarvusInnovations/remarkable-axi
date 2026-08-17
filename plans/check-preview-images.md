@@ -1,5 +1,6 @@
 ---
-status: planned
+status: done
+pr: 32
 depends: []
 specs:
   - specs/commands/check.md
@@ -57,16 +58,19 @@ doc comment, so a future ceiling change is one edit.
 
 ## Validation
 
-- [ ] Default `check` on a Paper Pro target writes images at 1176x1568 and reports
-      `preview of native 1620x2160`
-- [ ] `--full-res` writes native-resolution images and reports the native size only
-- [ ] A document whose native raster is already within 1568px is not upscaled and
+- [x] Default `check` on a Paper Pro target writes images at 1176x1568 and reports
+      `preview of native 1620x2160` — verified as a unit test against the mocked
+      1620x2160 target (`fitDimensions(1620, 2160)` in `test/lint/resample.test.ts`);
+      an actual Ghostscript run against paper-pro lands one pixel off this idealized
+      number (1175x1568 of native 1619x2160) — see Notes.
+- [x] `--full-res` writes native-resolution images and reports the native size only
+- [x] A document whose native raster is already within 1568px is not upscaled and
       gets no escape-hatch hint
-- [ ] Findings are byte-identical between a default and a `--full-res` run of the
+- [x] Findings are byte-identical between a default and a `--full-res` run of the
       same document
-- [ ] The escape-hatch help line appears exactly when at least one written image was
+- [x] The escape-hatch help line appears exactly when at least one written image was
       downscaled
-- [ ] `--no-images` with `--full-res` is not an error (full-res simply has nothing
+- [x] `--no-images` with `--full-res` is not an error (full-res simply has nothing
       to affect)
 
 ## Risks / unknowns
@@ -82,8 +86,40 @@ doc comment, so a future ceiling change is one edit.
 
 ## Notes
 
-(Populated at closeout.)
+- **The spec's Output example can't be produced literally.** `specs/commands/check.md`
+  shows a scalar `images: …` summary line immediately followed by the per-page table
+  headed `images[1]{page,path}:` — two lines both keyed `images`. Verified empirically
+  (see PR #32's description) that this is not achievable: `check`'s output is a plain
+  JS object, TOON's `encode()` renders one line per `Object.keys` entry, and a JS
+  object cannot hold two properties under the same key. The implementation keeps the
+  summary under `images` (matching the spec's line verbatim) and moved the table to a
+  new `image_files` key, same position and order the spec shows. Flagged as a
+  deviation rather than silently resolved — see Follow-ups.
+- **Ghostscript's own rounding means "1620x2160" isn't the literal native raster.**
+  `pageBox()` derives paper-pro's PDF page box from its native pixels rounded to whole
+  points (1620/229*72 ≈ 509.17pt → 509pt), and Ghostscript then rasterizes that
+  rounded point box back to pixels at 229dpi, landing one pixel short on the width
+  (1619, not 1620) in practice. This is pre-existing rounding-chain behavior, not
+  introduced by this plan — `test/commands/check.test.ts`'s preview-scale tests derive
+  their expected native size from an actual `--full-res` run rather than hard-coding
+  the idealized device pixel count, so they pass against Ghostscript's real output.
+  The Validation checkbox above is satisfied via the idealized-number unit test
+  (`fitDimensions(1620, 2160)`), per the task's own allowance for that.
+- Resampling: a hand-rolled separable box (area-average) filter in
+  `src/lint/resample.ts`, weighting partial source pixels by their coverage of the
+  destination span so non-integer scale ratios resample correctly (not just clean
+  divisors). No new dependency.
+- Manually eyeballed a ten-hairline fixture (0.08pt–1.43pt rules plus body text) at
+  both default and `--full-res` scale — every hairline, including the thinnest,
+  stayed visible and distinguishable at preview scale; text stayed legible.
 
 ## Follow-ups
 
-(Populated at closeout.)
+- Consider a small correction to `specs/commands/check.md`'s Output example so it
+  shows the achievable `images:` + `image_files[1]{page,path}:` shape (or otherwise
+  documents the key split) rather than the literal-but-unproducible dual `images`
+  lines — see the Notes entry above and PR #32's description for the full reasoning.
+- The design-loop-disclosure plan (out of scope here) will add more help lines to
+  `check`'s output (an eye-pass hint, a `put` hint) around the same `help` array this
+  plan appends the `--full-res` escape hatch to — worth a quick look at final line
+  ordering once that plan lands, since this plan's diff only appended to the end.
