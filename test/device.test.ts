@@ -107,6 +107,28 @@ describe("resolveSshTarget", () => {
   });
 });
 
+describe("parseStatusOutput storage", () => {
+  test("parses BusyBox's wrapped 5-column df continuation line", () => {
+    const facts = parseStatusOutput(
+      "XOCHITL=active\nVERSION=3.28.0.169\nSTORAGE=                      48568796   1762144  46279924   4% /home\nDOCS=910",
+    );
+    expect(facts.storage).toEqual({
+      totalBytes: 48568796 * 1024,
+      freeBytes: 46279924 * 1024,
+    });
+  });
+
+  test("still parses the unwrapped 6-column df line", () => {
+    const facts = parseStatusOutput(
+      "XOCHITL=active\nVERSION=x\nSTORAGE=/dev/mmcblk0p4 48568796 1762144 46279924 4% /home\nDOCS=1",
+    );
+    expect(facts.storage).toEqual({
+      totalBytes: 48568796 * 1024,
+      freeBytes: 46279924 * 1024,
+    });
+  });
+});
+
 describe("buildSshArgs", () => {
   test("a direct target has no -J and carries BatchMode + ConnectTimeout", () => {
     const args = buildSshArgs({ destination: "root@192.168.1.37" }, "echo hi");

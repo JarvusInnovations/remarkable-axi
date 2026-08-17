@@ -212,11 +212,18 @@ export function buildSshArgs(target: SshTarget, command: string): string[] {
   return args;
 }
 
+/** Ceiling on a text-mode remote command's stdout. Node's 1MB default was
+ * found live to kill the full-account device dump (a 910-document account
+ * emits ~10MB), surfacing as a phantom exit-1; sized with the same headroom
+ * philosophy as `MAX_BINARY_BYTES` below. */
+const MAX_TEXT_BYTES = 64 * 1024 * 1024;
+
 /** The real runner: shells out to the discovered `ssh` binary. */
 const runSsh: SshRunner = async (binPath, args, opts) => {
   try {
     const { stdout, stderr } = await execFileAsync(binPath, args, {
       timeout: opts.timeoutMs,
+      maxBuffer: MAX_TEXT_BYTES,
     });
     return { stdout, stderr, code: 0 };
   } catch (error) {
@@ -519,10 +526,14 @@ export function parseStatusOutput(stdout: string): DeviceStatusFacts {
   let storage: DeviceStatusFacts["storage"] = null;
   const storageLine = fields.STORAGE?.trim();
   if (storageLine) {
-    // `df -k` columns: filesystem, 1K-blocks, used, available, use%, mount.
+    // `df -k` columns: filesystem, 1K-blocks, used, available, use%, mount —
+    // but BusyBox wraps a long filesystem name onto its own line, so the
+    // `tail -n1` continuation carries only the last five columns (found
+    // live on a Paper Pro). Anchoring from the END parses both shapes:
+    // mount, use%, available, used, 1K-blocks, [filesystem].
     const cols = storageLine.split(/\s+/);
-    const totalKb = Number(cols[1]);
-    const availKb = Number(cols[3]);
+    const totalKb = Number(cols[cols.length - 5]);
+    const availKb = Number(cols[cols.length - 3]);
     if (Number.isFinite(totalKb) && Number.isFinite(availKb)) {
       storage = { totalBytes: totalKb * 1024, freeBytes: availKb * 1024 };
     }
