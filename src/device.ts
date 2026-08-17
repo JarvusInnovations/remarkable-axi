@@ -199,6 +199,12 @@ export function buildSshArgs(target: SshTarget, command: string): string[] {
     "-o",
     "BatchMode=yes",
     "-o",
+    // First contact trusts, changed keys refuse: under BatchMode an unknown
+    // host key is otherwise a mute failure no agent can act on, while the
+    // attack-signaling case — a *changed* key — still refuses loudly (and
+    // `unreachable` below names it). specs/behaviors/device-access.md.
+    "StrictHostKeyChecking=accept-new",
+    "-o",
     `ConnectTimeout=${CONNECT_TIMEOUT_S}`,
   ];
   if (target.via) args.push("-J", target.via);
@@ -282,7 +288,15 @@ export async function execRemote(
   }
 
   if (result.code !== 0) {
-    throw unreachable(target, result.stderr || result.stdout);
+    // Only ssh's own transport failure (exit 255) means the device was not
+    // reached; any other non-zero exit came from the remote command itself,
+    // over a connection that worked — conflating the two turns every remote
+    // bug into a phantom connectivity problem (found live: a status probe
+    // aborted by a missing file read as DEVICE_UNREACHABLE).
+    if (result.code === 255) {
+      throw unreachable(target, result.stderr || result.stdout);
+    }
+    throw remoteFailed(target, result.code, result.stderr || result.stdout);
   }
 
   return result.stdout;
@@ -378,7 +392,12 @@ export async function execRemoteBinary(
   }
 
   if (result.code !== 0) {
-    throw unreachable(target, result.stderr || "(no stderr)");
+    // Same 255-vs-other split as execRemote above — one classifier, both
+    // transports.
+    if (result.code === 255) {
+      throw unreachable(target, result.stderr || "(no stderr)");
+    }
+    throw remoteFailed(target, result.code, result.stderr);
   }
 
   return result.stdout;
@@ -390,10 +409,42 @@ export async function execRemoteBinary(
  * device password, so a wrong or missing key is not this tool's to retry —
  * per specs/behaviors/device-access.md's "Auth is key-based, full stop."
  */
+/**
+ * The connection worked; the command the tool sent did not. Surfaced as its
+ * own code with the remote stderr, because "unreachable" would send the
+ * reader chasing Wi-Fi and addresses when the fault is in this tool's own
+ * remote command (or a firmware difference it hasn't met yet).
+ */
+function remoteFailed(target: SshTarget, code: number, detail: string): AxiError {
+  const where = target.via
+    ? `${target.destination} via ${target.via}`
+    : target.destination;
+  const excerpt = detail.trim().split("\n").slice(0, 3).join("\n");
+  return new AxiError(
+    `remote command failed on ${where} (exit ${code})${excerpt ? `: ${excerpt}` : ""}`,
+    "REMOTE_FAILED",
+    [
+      "The device was reached; the failure is in the command run on it — often a firmware difference",
+      "Run `remarkable-axi doctor` for the device block, and report this if it persists",
+    ],
+  );
+}
+
 function unreachable(target: SshTarget, detail: string): AxiError {
   const where = target.via
     ? `${target.destination} via ${target.via}`
     : target.destination;
+
+  if (/REMOTE HOST IDENTIFICATION HAS CHANGED|Host key verification failed/i.test(detail)) {
+    return new AxiError(
+      `host key changed for ${where} — refusing to connect`,
+      "DEVICE_UNREACHABLE",
+      [
+        "A changed key can mean the device was re-flashed or reset — or that something is intercepting the connection; confirm which before trusting it",
+        "If the device was legitimately reset, remove the old key: `ssh-keygen -R <device-ip>` on the connecting machine, then retry",
+      ],
+    );
+  }
 
   if (/permission denied|authentication failed/i.test(detail)) {
     return new AxiError(
@@ -431,10 +482,16 @@ function unreachable(target: SshTarget, detail: string): AxiError {
  * A field that fails to parse degrades to "unknown" rather than failing the
  * whole command; reachability is the fact this exists to prove.
  */
+// A bare `. file` on a path that does not exist ABORTS a non-interactive
+// POSIX shell — no output, exit 1 — so the source is guarded by `[ -r ]`.
+// Found live: Paper Pro firmware 3.28 has no /usr/share/remarkable/update.conf
+// at all; there the version comes from /etc/os-release's IMG_VERSION instead.
 export const STATUS_COMMAND =
-  '. /usr/share/remarkable/update.conf 2>/dev/null; ' +
+  'V=unknown; ' +
+  '[ -r /usr/share/remarkable/update.conf ] && . /usr/share/remarkable/update.conf 2>/dev/null && V="${REMARKABLE_RELEASE_VERSION:-unknown}"; ' +
+  '[ "$V" = unknown ] && V="$(sed -n \'s/^IMG_VERSION="\\{0,1\\}\\([^"]*\\)"\\{0,1\\}$/\\1/p\' /etc/os-release 2>/dev/null)"; ' +
   'echo "XOCHITL=$(systemctl is-active xochitl 2>/dev/null || echo unknown)"; ' +
-  'echo "VERSION=${REMARKABLE_RELEASE_VERSION:-unknown}"; ' +
+  'echo "VERSION=${V:-unknown}"; ' +
   'echo "STORAGE=$(df -k /home 2>/dev/null | tail -n1)"; ' +
   'echo "DOCS=$(ls -1 /home/root/.local/share/remarkable/xochitl/*.metadata 2>/dev/null | wc -l)"';
 

@@ -114,6 +114,8 @@ describe("buildSshArgs", () => {
       "-o",
       "BatchMode=yes",
       "-o",
+      "StrictHostKeyChecking=accept-new",
+      "-o",
       "ConnectTimeout=8",
       "root@192.168.1.37",
       "echo hi",
@@ -128,6 +130,8 @@ describe("buildSshArgs", () => {
     expect(args).toEqual([
       "-o",
       "BatchMode=yes",
+      "-o",
+      "StrictHostKeyChecking=accept-new",
       "-o",
       "ConnectTimeout=8",
       "-J",
@@ -187,6 +191,43 @@ describe("execRemote", () => {
       expect(help).toContain("About");
       expect(help).toContain("ssh-copy-id");
       expect(help).toContain("rotates");
+    }
+  });
+
+  test("a non-255 exit is REMOTE_FAILED with the remote stderr, not unreachable", async () => {
+    try {
+      await execRemote(
+        { destination: "root@192.168.1.37" },
+        "false",
+        { runner: fakeRunner({ stdout: "", stderr: "ash: something: not found", code: 1 }) },
+      );
+      throw new Error("should have thrown");
+    } catch (error) {
+      const axi = error as AxiError;
+      expect(axi.code).toBe("REMOTE_FAILED");
+      expect(axi.message).toContain("exit 1");
+      expect(axi.message).toContain("ash: something: not found");
+    }
+  });
+
+  test("a changed host key names the changed key, not a generic unreachable", async () => {
+    try {
+      await execRemote(
+        { destination: "root@192.168.1.37" },
+        "echo hi",
+        {
+          runner: fakeRunner({
+            stdout: "",
+            stderr: "@@@ WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED! @@@",
+            code: 255,
+          }),
+        },
+      );
+      throw new Error("should have thrown");
+    } catch (error) {
+      const axi = error as AxiError;
+      expect(axi.code).toBe("DEVICE_UNREACHABLE");
+      expect(axi.message).toContain("host key changed");
     }
   });
 
