@@ -29,6 +29,13 @@ Setup
   doctor                                            pairing, connectivity, external tools, cache
   setup device <model>                              set the device to design for
   setup hooks                                       install SessionStart hooks
+  setup ssh <destination> [--via <jump>]            configure direct or relayed SSH to the tablet
+
+Device (optional; requires setup ssh)
+  device status                                     reachability, xochitl, storage
+  device backup <path>                              tar a document's on-device file set to a local archive
+  device orphans [<path>] [--render]                stroke files no page index references
+  device reattach <path>                            write recovered strokes back into a live index
 ```
 
 ## Shape
@@ -46,6 +53,8 @@ never earns a verb or a mode flag. See
 
 - [page](page.md) · [render](render.md) · [check](check.md)
 - [put](put.md) · [get](get.md)
+- [device](device.md) — specified ahead of implementation; rides the
+  device-recovery spec batch
 
 The remaining commands are existing behavior awaiting spec backfill.
 

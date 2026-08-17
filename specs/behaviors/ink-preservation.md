@@ -37,8 +37,19 @@ transcript rather than requiring archaeology.
 document carries ink is answered by its entry list — per-page `.rm` files — which is
 one request and no downloads.
 
+**A page counts as inked only when its stroke file holds at least one stroke.** The
+device creates a stroke file for a page that was merely *opened*, and counting those
+as ink makes the refusal fire on documents nobody wrote on
+([#28](https://github.com/JarvusInnovations/remarkable-axi/issues/28)). A false
+refusal is not conservative — it trains the `--discard-ink` reflex, and that reflex
+is what waves through a real loss later. The zero-stroke case must be
+distinguishable without guessing; where the entry's size cannot settle it against a
+measured threshold, the stroke file is fetched and parsed rather than assumed
+either way.
+
 ```
 error: /Talks/Flyer has ink on 3 of 12 pages; --replace would discard it
+       last synced 2h ago — ink written on-device since then is invisible to this check
 help: save it separately first —
         remarkable-axi get "/Talks/Flyer" --overlay flyer-annotated.pdf
       or replace and let it go —
@@ -47,6 +58,35 @@ help: save it separately first —
 
 The override flag names what is lost. `--force` would let an agent proceed without
 acknowledging the specific consequence; `--discard-ink` does not.
+
+### Cloud checks see only synced ink
+
+Everything this behavior can inspect — the entry list, the per-page stroke files,
+the trash backup — is the **cloud's copy**. Strokes written on the device that have
+not yet synced up are invisible to all of it, and a replace delivered inside that
+window wins over them: the device takes the new document, rewrites its page index,
+and the unsynced strokes are **orphaned locally** — unreferenced on the device's
+disk, not destroyed, and absent from every cloud fetch thereafter. The same
+signature occurs without any replace when a stuck device sync is resolved by a
+restart taking the cloud's side. Two real incidents (2026-08-14, twelve pages;
+2026-08-17, one page) both wore it: cloud fetches report zero ink while the strokes
+sit intact on the device.
+
+Because the window cannot be closed from the cloud, it is **disclosed** instead:
+
+- Every `--replace` — refusal *and* success — reports the target's `last_synced`
+  age. A small number means the cloud's picture is fresh; a large one on a document
+  the user writes on daily is the risk, stated where the decision is being made.
+- The refusal's blind-spot line (above) says plainly what the check could not see.
+- When a device connection is configured, the check extends to the device itself —
+  the intended end state, specified (and bounded) in
+  [device-access](device-access.md#the-prize-closing-the-blind-spot-at-the-gate).
+
+Recovery from an orphaning — locating the stroke files, identifying them by their
+surviving thumbnails, reattaching them to a live index — is the
+[device command group](../commands/device.md). The scheduling mitigation is the
+caller's: replace during windows the user has not been writing in, which is the one
+time the blind spot is provably empty.
 
 `--keep-ink` — a third route that carries the ink onto the new version instead of
 choosing between the two above — is the design this section describes next, but it
