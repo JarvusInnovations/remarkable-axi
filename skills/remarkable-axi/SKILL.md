@@ -97,6 +97,7 @@ recovery procedure — proven end to end in two real incidents.
 - `npx -y remarkable-axi device status [--ssh <dest>] [--via <jump>]` — Check tablet reachability, xochitl, storage free, and local document count
 - `npx -y remarkable-axi device backup <path> [--out <tar>] [--force] [--ssh <dest>] [--via <jump>]` — Tar a document's complete on-device file set to a local archive — the first step of every recovery
 - `npx -y remarkable-axi device orphans [<path>] [--render] [--out <dir>] [--ssh <dest>] [--via <jump>]` — List .rm stroke files no page index references — the tablet's own unsynced/clobbered ink
+- `npx -y remarkable-axi device reattach <path> --map <stroke-uuid>=<page-uuid>[,...] | --restore-index [--ssh <dest>] [--via <jump>]` — Write recovered strokes back into a document's index — backup, stop xochitl, write, sync, restart
 
 <!-- END GENERATED: command-reference -->
 
@@ -109,6 +110,7 @@ Every command supports `--help` for its full flag reference and examples.
   adds the recovery judgment and one-time SSH setup that command output alone
   can't teach.
 - The `device` command group (`device status`, `device backup`,
-  `device reattach`, …) is designed but not yet shipped — the ink-recovery
-  playbook uses raw SSH steps only, and will absorb those commands as they
-  land without changing what it recovers.
+  `device orphans`, `device reattach`) is fully shipped. The ink-recovery
+  playbook drives recovery through those commands now; the raw SSH procedure
+  that shipped first is kept in the playbook as a fallback appendix, for a
+  step no command covers or a connection the commands themselves can't reach.
