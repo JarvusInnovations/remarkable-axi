@@ -20,7 +20,10 @@ export const XOCHITL_DIR = "/home/root/.local/share/remarkable/xochitl";
 /** Generous: a full-account dump greps and `cat`s every document's metadata
  * and content in one connection — cheap per file, but the default 15s exec
  * ceiling is sized for a single status probe, not hundreds of them. */
-export const DEVICE_DUMP_TIMEOUT_MS = 60_000;
+// Measured live: a 910-document account over a relayed (-J) hop takes ~73s
+// for the ~6MB dump, so the original 60s budget was just short of reality.
+// Sized with the same headroom philosophy as the binary path's ceiling.
+export const DEVICE_DUMP_TIMEOUT_MS = 300_000;
 
 /**
  * One BusyBox ash-safe command dumping, for every document on the device:

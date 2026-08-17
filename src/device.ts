@@ -442,6 +442,17 @@ function unreachable(target: SshTarget, detail: string): AxiError {
     ? `${target.destination} via ${target.via}`
     : target.destination;
 
+  if (/did not finish within/i.test(detail)) {
+    return new AxiError(
+      `timed out reaching ${where} — ${detail}`,
+      "DEVICE_UNREACHABLE",
+      [
+        "The connection may be fine and the command slow — a large account over a relayed hop takes longer",
+        "Retry; if it recurs on the same command, report it — the budget may need resizing",
+      ],
+    );
+  }
+
   if (/REMOTE HOST IDENTIFICATION HAS CHANGED|Host key verification failed/i.test(detail)) {
     return new AxiError(
       `host key changed for ${where} — refusing to connect`,
