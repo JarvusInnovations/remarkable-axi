@@ -232,6 +232,19 @@ const runSsh: SshRunner = async (binPath, args, opts) => {
   }
 };
 
+/** Resolve the discovered `ssh` binary or fail `MISSING_TOOL`, shared by
+ * every exec entry point below. */
+async function requireSsh(): Promise<SshInfo> {
+  const info = await findSsh();
+  if (!info) {
+    throw new AxiError("ssh not found", "MISSING_TOOL", [
+      "Install the OpenSSH client — most systems ship `ssh`; Debian/Ubuntu: `apt install openssh-client`",
+      "Run `remarkable-axi doctor` to confirm it is discovered",
+    ]);
+  }
+  return info;
+}
+
 /**
  * Run one command on the tablet over SSH and return its stdout.
  *
@@ -241,26 +254,26 @@ const runSsh: SshRunner = async (binPath, args, opts) => {
  * with key-install steps when the failure looks like an auth rejection).
  * `NO_DEVICE_SSH` is `resolveSshTarget`'s concern, not this function's — by
  * the time a `target` reaches here, one was already found.
+ *
+ * `opts.timeoutMs` overrides the default 15s ceiling — plenty for the
+ * metadata/content greps `backup` and `orphans` do to plan their work, but a
+ * full-account metadata dump on a large library can run past it, so callers
+ * doing that pass a longer budget explicitly rather than this default
+ * silently growing for everyone.
  */
 export async function execRemote(
   target: SshTarget,
   command: string,
-  opts: { runner?: SshRunner } = {},
+  opts: { runner?: SshRunner; timeoutMs?: number } = {},
 ): Promise<string> {
-  const info = await findSsh();
-  if (!info) {
-    throw new AxiError("ssh not found", "MISSING_TOOL", [
-      "Install the OpenSSH client — most systems ship `ssh`; Debian/Ubuntu: `apt install openssh-client`",
-      "Run `remarkable-axi doctor` to confirm it is discovered",
-    ]);
-  }
-
+  const info = await requireSsh();
   const args = buildSshArgs(target, command);
   const runner = opts.runner ?? runSsh;
+  const timeoutMs = opts.timeoutMs ?? EXEC_TIMEOUT_MS;
 
   let result: RunResult;
   try {
-    result = await runner(info.path, args, { timeoutMs: EXEC_TIMEOUT_MS });
+    result = await runner(info.path, args, { timeoutMs });
   } catch (error) {
     throw unreachable(
       target,
@@ -270,6 +283,102 @@ export async function execRemote(
 
   if (result.code !== 0) {
     throw unreachable(target, result.stderr || result.stdout);
+  }
+
+  return result.stdout;
+}
+
+// ---------------------------------------------------------------------------
+// Binary-safe remote execution — `device backup`'s tar stream and any single
+// `.rm`/thumbnail fetch `device orphans` needs to parse or render.
+// ---------------------------------------------------------------------------
+
+/** Hard ceiling on a binary transfer: generous, because a tar of a large
+ * document over a relayed (`-J`) connection can be slow — see this plan's
+ * "Streaming large docs over a relayed connection" risk note. Individual
+ * `.rm`/thumbnail fetches finish in a fraction of this; the ceiling is sized
+ * for the tar case, and every caller can still override it. */
+const BINARY_TIMEOUT_MS = 300_000;
+
+/** A tarred document is not expected to approach this, but a ceiling here
+ * turns a runaway transfer into a clear failure instead of unbounded memory
+ * growth. */
+const MAX_BINARY_BYTES = 512 * 1024 * 1024;
+
+export interface BinaryRunResult {
+  stdout: Buffer;
+  stderr: string;
+  code: number;
+}
+
+/** The binary-capture counterpart to `SshRunner` — same replaceable-in-tests
+ * shape, but stdout is a `Buffer` so a tar stream (or a `.rm`/PNG file)
+ * survives the round trip intact instead of being decoded as UTF-8 text. */
+export type SshBinaryRunner = (
+  binPath: string,
+  args: string[],
+  opts: { timeoutMs: number },
+) => Promise<BinaryRunResult>;
+
+/** The real binary runner: identical to `runSsh` except for the encoding —
+ * BatchMode/ConnectTimeout come from `buildSshArgs`, shared with the string
+ * path above. */
+const runSshBinary: SshBinaryRunner = async (binPath, args, opts) => {
+  try {
+    const { stdout, stderr } = await execFileAsync(binPath, args, {
+      timeout: opts.timeoutMs,
+      encoding: "buffer",
+      maxBuffer: MAX_BINARY_BYTES,
+    });
+    return { stdout, stderr: stderr.toString("utf8"), code: 0 };
+  } catch (error) {
+    const err = error as {
+      stdout?: Buffer;
+      stderr?: Buffer;
+      code?: number;
+      killed?: boolean;
+      signal?: string;
+    };
+    if (err.killed || err.signal) {
+      throw new Error(`ssh did not finish within ${opts.timeoutMs / 1000}s`);
+    }
+    return {
+      stdout: err.stdout ?? Buffer.alloc(0),
+      stderr: err.stderr?.toString("utf8") ?? "",
+      code: typeof err.code === "number" ? err.code : 1,
+    };
+  }
+};
+
+/**
+ * Run one command on the tablet and return its stdout as raw bytes —
+ * `execRemote`'s binary-safe counterpart, for `device backup`'s tar stream
+ * and any `.rm`/thumbnail fetch `device orphans` needs. Error translation
+ * (`MISSING_TOOL`/`DEVICE_UNREACHABLE`) is identical to `execRemote`, so a
+ * connectivity fix never has to be made twice.
+ */
+export async function execRemoteBinary(
+  target: SshTarget,
+  command: string,
+  opts: { runner?: SshBinaryRunner; timeoutMs?: number } = {},
+): Promise<Buffer> {
+  const info = await requireSsh();
+  const args = buildSshArgs(target, command);
+  const runner = opts.runner ?? runSshBinary;
+  const timeoutMs = opts.timeoutMs ?? BINARY_TIMEOUT_MS;
+
+  let result: BinaryRunResult;
+  try {
+    result = await runner(info.path, args, { timeoutMs });
+  } catch (error) {
+    throw unreachable(
+      target,
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+
+  if (result.code !== 0) {
+    throw unreachable(target, result.stderr || "(no stderr)");
   }
 
   return result.stdout;
