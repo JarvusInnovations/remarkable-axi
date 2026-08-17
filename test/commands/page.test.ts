@@ -49,6 +49,18 @@ describe("page command", () => {
     expect(landscapeCss.css).toBe(cssBlock({ width: 596, height: 447 }));
   });
 
+  test("the plain form hints at --css for a paste-ready block", async () => {
+    const output = await page(["--device", "rm2"]);
+    expect(output.help).toEqual([
+      "Run `remarkable-axi page --css` for a paste-ready `@page` block",
+    ]);
+  });
+
+  test("--css does not repeat the hint that got the reader there", async () => {
+    const output = await page(["--device", "rm2", "--css"]);
+    expect(output.help).toBeUndefined();
+  });
+
   test("--device overrides per invocation without requiring stored config", async () => {
     // No config is read or written anywhere in this command when --device is
     // supplied; if it were, an unrelated developer's stored target could

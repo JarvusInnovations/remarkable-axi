@@ -56,6 +56,12 @@ describe("renderCommandHelp", () => {
     expect(help).toContain("--replace");
   });
 
+  test("--replace states the safe upload-first ordering and names rm-then-put", () => {
+    const help = renderCommandHelp("put");
+    expect(help).toContain("uploads first, then trashes the old copy under a dated name");
+    expect(help).toContain("rm-then-put");
+  });
+
   test("renders get's flags and examples, including --as original", () => {
     const help = renderCommandHelp("get");
     expect(help).toContain("usage: remarkable-axi get <path> [<dest>]");
