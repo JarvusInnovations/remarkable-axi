@@ -90,6 +90,11 @@ recovery procedure — proven end to end in two real incidents.
 - `npx -y remarkable-axi doctor` — Check pairing, connectivity, external tools, duplicate paths, and the cache
 - `npx -y remarkable-axi setup device <model>` — Set the device to design for; its specs then appear in every session
 - `npx -y remarkable-axi setup hooks` — Install SessionStart hooks so agents see tablet state automatically
+- `npx -y remarkable-axi setup ssh <destination> [--via <jump>]` — Configure direct or relayed SSH access to the tablet, for the device command group
+
+### Device
+
+- `npx -y remarkable-axi device status [--ssh <dest>] [--via <jump>]` — Check tablet reachability, xochitl, storage free, and local document count
 
 <!-- END GENERATED: command-reference -->
 
