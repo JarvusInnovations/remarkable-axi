@@ -1,3 +1,5 @@
+import { encodeToon } from "./output.js";
+
 export const DESCRIPTION =
   "Send documents to a reMarkable tablet, design pages for its panel, and pull handwriting back off it";
 
@@ -220,56 +222,56 @@ export function commandDoc(name: string): CommandDoc | undefined {
   return undefined;
 }
 
-/** Render the `--help` block for a single command. */
+/**
+ * Render the `--help` block for a single command as TOON — the same
+ * structured output every other response uses (specs/architecture.md,
+ * "Help output is itself output"), not a prose manpage.
+ */
 export function renderCommandHelp(name: string): string | null {
   const doc = commandDoc(name);
   if (!doc) return null;
 
-  const lines = [`usage: remarkable-axi ${doc.usage}`, "", doc.summary];
-
-  if (doc.flags?.length) {
-    lines.push("", "flags:");
-    for (const flag of doc.flags) lines.push(`  ${flag}`);
-  }
-
-  if (doc.examples?.length) {
-    lines.push("", "examples:");
-    for (const example of doc.examples) lines.push(`  ${example}`);
-  }
+  const output: Record<string, unknown> = {
+    usage: `remarkable-axi ${doc.usage}`,
+    summary: doc.summary,
+  };
+  if (doc.flags?.length) output.flags = doc.flags;
+  if (doc.examples?.length) output.examples = doc.examples;
 
   // The SDK writes this string verbatim, so the trailing newline is ours.
-  return `${lines.join("\n")}\n`;
+  return `${encodeToon(output)}\n`;
 }
 
-/** Render the top-level help listing every command by group. */
+/**
+ * Render the top-level help listing every command by group, as a single
+ * TOON document. `runAxiCli` appends the SDK's own `built-in:` block (the
+ * `update` command) right after this with no separator; keeping every key
+ * here at depth 0 with no trailing blank line means the two writes read as
+ * one coherent document rather than two.
+ */
 export function renderTopLevelHelp(): string {
-  const lines = [
-    `remarkable-axi — ${DESCRIPTION}`,
-    "",
-    "usage: remarkable-axi <command> [args] [flags]",
-  ];
+  const output: Record<string, unknown> = {
+    description: DESCRIPTION,
+    usage: "remarkable-axi <command> [args] [flags]",
+  };
 
   for (const group of COMMAND_GROUPS) {
     // A group can be declared with no commands yet — see the `Design` group
     // above — so it stays out of the printed listing until something lands
-    // in it, rather than showing an empty header or crashing on Math.max().
+    // in it, rather than showing an empty header.
     if (group.commands.length === 0) continue;
 
-    lines.push("", `${group.group}:`);
-    const width = Math.max(
-      ...group.commands.map((c) => c.usage.length),
-    );
-    for (const doc of group.commands) {
-      lines.push(`  ${doc.usage.padEnd(width)}  ${doc.summary}`);
-    }
+    output[group.group] = group.commands.map((doc) => ({
+      usage: doc.usage,
+      summary: doc.summary,
+    }));
   }
 
-  lines.push(
-    "",
+  output.help = [
     "Every cloud call times out after 120s; set REMARKABLE_TIMEOUT=<seconds> to change it (0 waits indefinitely).",
     "Run `remarkable-axi <command> --help` for usage on any command.",
     "Run `remarkable-axi` with no arguments to see current tablet state.",
-  );
+  ];
 
-  return lines.join("\n");
+  return encodeToon(output);
 }
