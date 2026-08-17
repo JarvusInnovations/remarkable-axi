@@ -7,6 +7,7 @@ import { age, recencyKey } from "../time.js";
 import { readConfig } from "../config.js";
 import { spec } from "../devices.js";
 import { buildTree, type Node } from "../paths.js";
+import { DESIGN_ENTRY_HINT } from "../hints.js";
 
 const CONNECT_URL = "https://my.remarkable.com/device/desktop/connect";
 const RECENT_LIMIT = 8;
@@ -99,6 +100,7 @@ export async function home(): Promise<Output> {
       help: [
         'Run `remarkable-axi put "<url>" /Articles` to send a web article',
         "Run `remarkable-axi put <file> <dest>` to upload a PDF or EPUB",
+        DESIGN_ENTRY_HINT,
       ],
     };
   }
@@ -135,6 +137,7 @@ export async function home(): Promise<Output> {
         : undefined,
       'Run `remarkable-axi put "<url>" /Articles` to send a web article',
       "Run `remarkable-axi ls <path>` to browse a folder",
+      DESIGN_ENTRY_HINT,
     ].filter(Boolean) as string[],
   };
 }
