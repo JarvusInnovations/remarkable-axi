@@ -6,6 +6,13 @@ import { AxiError } from "axi-sdk-js";
 import type { SshConfig } from "../../src/config.js";
 import { findGhostscript, resetGhostscriptCache } from "../../src/gs.js";
 import { WITH_STROKE_HEX, ZERO_STROKE_HEX, fromHex } from "../fixtures/rm6.js";
+import { DEVICE_DUMP_COMMAND } from "../../src/device-fs.js";
+import {
+  START_XOCHITL_COMMAND,
+  STOP_XOCHITL_COMMAND,
+  SYNC_COMMAND,
+  XOCHITL_ACTIVE_COMMAND,
+} from "../../src/device.js";
 
 // `setup ssh` and every `device` subcommand read/write config and open a
 // connection through src/device.js — both replaced here with controllable
@@ -25,7 +32,8 @@ vi.mock("../../src/config.js", () => ({
   configPath: "/fake/config/config.json",
 }));
 
-let execRemoteImpl: (...args: unknown[]) => Promise<string> = async () => "";
+let execRemoteImpl: (target: unknown, command: string, opts?: unknown) => Promise<string> =
+  async () => "";
 let execRemoteBinaryImpl: (target: unknown, command: string, opts?: unknown) => Promise<Buffer> =
   async () => Buffer.alloc(0);
 
@@ -39,13 +47,14 @@ vi.mock("../../src/device.js", async () => {
   );
   return {
     ...actual,
-    execRemote: (...args: unknown[]) => execRemoteImpl(...args),
+    execRemote: (target: unknown, command: string, opts?: unknown) =>
+      execRemoteImpl(target, command, opts),
     execRemoteBinary: (target: unknown, command: string, opts?: unknown) =>
       execRemoteBinaryImpl(target, command, opts),
   };
 });
 
-const { setupSsh, status, device, backup, orphans } = await import(
+const { setupSsh, status, device, backup, orphans, reattach } = await import(
   "../../src/commands/device.js"
 );
 
@@ -541,5 +550,319 @@ describe("device orphans", () => {
         orphans(["/Daily/Today", "--render", "--out", dir]),
       ).rejects.toMatchObject({ code: "MISSING_TOOL" });
     });
+  });
+});
+
+describe("device reattach", () => {
+  let dir: string;
+  let cwd: string;
+  let events: string[];
+
+  beforeEach(async () => {
+    sshConfig = { destination: "root@192.168.1.37" };
+    dir = await mkdtemp(join(tmpdir(), "remarkable-axi-reattach-test-"));
+    cwd = process.cwd();
+    process.chdir(dir);
+    events = [];
+  });
+
+  afterEach(async () => {
+    process.chdir(cwd);
+    await removeDir(dir, { recursive: true, force: true });
+  });
+
+  /** Doc with one live page and two orphaned stroke files, for --map. */
+  function mapFixtureDump() {
+    return dumpFor([
+      docBlock({
+        uuid: "doc-1",
+        meta: { visibleName: "Today", parent: "" },
+        content: { pages: ["page-live"] },
+        rm: [
+          { uuid: "page-live", size: 10, mtime: 1 },
+          { uuid: "stroke-orphan", size: 20, mtime: 2 },
+          { uuid: "stroke-orphan-2", size: 20, mtime: 3 },
+        ],
+      }),
+    ]);
+  }
+
+  /** Doc with one currently-indexed page and two orphans of differing
+   * mtime, for --restore-index. The indexed page's `.rm` content (inked or
+   * not) is supplied per-test via `rmBytesByUuid`. */
+  function restoreFixtureDump() {
+    return dumpFor([
+      docBlock({
+        uuid: "doc-2",
+        meta: { visibleName: "Journal", parent: "" },
+        content: { pages: ["page-current"] },
+        rm: [
+          { uuid: "page-current", size: 10, mtime: 1 },
+          { uuid: "orphan-late", size: 20, mtime: 200 },
+          { uuid: "orphan-early", size: 20, mtime: 100 },
+        ],
+      }),
+    ]);
+  }
+
+  /** Generic text-command router: DEVICE_DUMP_COMMAND returns `dump`, the
+   * ritual's fixed commands succeed, a map-apply command synthesizes an
+   * `OK` line per `cp`, and every call is recorded (in call order,
+   * interleaved with binary calls) to `events`. */
+  function textRouter(dump: string, opts: { xochitlActive?: string } = {}) {
+    return async (_target: unknown, command: string) => {
+      events.push(`text:${command}`);
+      if (command === DEVICE_DUMP_COMMAND) return dump;
+      if (command === XOCHITL_ACTIVE_COMMAND) return opts.xochitlActive ?? "active";
+      if (command.includes('cp "$D/')) {
+        return command
+          .split("\n")
+          .map((line) => /cp "\$D\/([^"]+)\.rm" "\$D\/([^"]+)\.rm"/.exec(line))
+          .filter((m): m is RegExpExecArray => m !== null)
+          .map((m) => `OK ${m[1]} ${m[2]}`)
+          .join("\n");
+      }
+      return "";
+    };
+  }
+
+  function binaryRouter(rmBytesByUuid: Record<string, Uint8Array> = {}) {
+    return async (_target: unknown, command: string) => {
+      events.push(`binary:${command}`);
+      if (command.includes("tar czf -")) return Buffer.from("tar-bytes");
+      for (const [uuid, bytes] of Object.entries(rmBytesByUuid)) {
+        if (command.includes(`${uuid}.rm`)) return Buffer.from(bytes);
+      }
+      throw new Error(`unexpected binary command: ${command}`);
+    };
+  }
+
+  test("USAGE when neither --map nor --restore-index is given", async () => {
+    await expect(reattach(["/Today"])).rejects.toMatchObject({ code: "USAGE" });
+  });
+
+  test("USAGE when both --map and --restore-index are given", async () => {
+    await expect(
+      reattach(["/Today", "--map", "a=b", "--restore-index"]),
+    ).rejects.toMatchObject({ code: "USAGE" });
+  });
+
+  test("USAGE for a malformed --map entry", async () => {
+    execRemoteImpl = textRouter(mapFixtureDump());
+    await expect(reattach(["/Today", "--map", "no-equals-sign"])).rejects.toMatchObject({
+      code: "USAGE",
+    });
+  });
+
+  test("USAGE when --map names the same target page twice", async () => {
+    execRemoteImpl = textRouter(mapFixtureDump());
+    await expect(
+      reattach(["/Today", "--map", "stroke-orphan=page-live,stroke-orphan-2=page-live"]),
+    ).rejects.toMatchObject({ code: "USAGE" });
+  });
+
+  test("NOT_FOUND when --map names a stroke that isn't a current orphan", async () => {
+    execRemoteImpl = textRouter(mapFixtureDump());
+    await expect(
+      reattach(["/Today", "--map", "page-live=page-live"]),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  test("NOT_FOUND when --map names a page not in the current index", async () => {
+    execRemoteImpl = textRouter(mapFixtureDump());
+    await expect(
+      reattach(["/Today", "--map", "stroke-orphan=not-a-page"]),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  test("validation failures never touch the device dump's backup step (no binary call at all)", async () => {
+    execRemoteImpl = textRouter(mapFixtureDump());
+    execRemoteBinaryImpl = binaryRouter();
+    await expect(
+      reattach(["/Today", "--map", "not-an-orphan=page-live"]),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(events.some((e) => e.startsWith("binary:"))).toBe(false);
+  });
+
+  test("--map: the full ritual runs in order — dump, backup, stop, apply, sync, start, verify", async () => {
+    execRemoteImpl = textRouter(mapFixtureDump());
+    execRemoteBinaryImpl = binaryRouter();
+
+    const output = await reattach(["/Today", "--map", "stroke-orphan=page-live"]);
+
+    expect(events[0]).toBe(`text:${DEVICE_DUMP_COMMAND}`);
+    expect(events[1]).toContain("binary:");
+    expect(events[1]).toContain("tar czf -");
+    expect(events[2]).toBe(`text:${STOP_XOCHITL_COMMAND}`);
+    expect(events[3]).toContain('cp "$D/stroke-orphan.rm" "$D/page-live.rm"');
+    expect(events[4]).toBe(`text:${SYNC_COMMAND}`);
+    expect(events[5]).toBe(`text:${START_XOCHITL_COMMAND}`);
+    expect(events[6]).toBe(`text:${XOCHITL_ACTIVE_COMMAND}`);
+    expect(events).toHaveLength(7);
+
+    const reattached = output.reattached as Record<string, unknown>;
+    expect(reattached.path).toBe("/Today");
+    expect(reattached.mode).toBe("map");
+    expect(reattached.xochitl).toBe("restarted");
+    expect(reattached.strokes).toEqual([
+      { stroke: "stroke-orphan", page: "page-live", disposition: "attached" },
+    ]);
+    expect(String(reattached.backup)).toMatch(/Today-device-backup-\d{4}-\d{2}-\d{2}\.tar\.gz$/);
+    expect(output.help).toEqual([
+      "Reopen the document on the tablet — the ink is live and will sync up on its own",
+    ]);
+
+    // The archive really was written, not just reported.
+    expect(await readFile(String(reattached.backup), "utf8")).toBe("tar-bytes");
+  });
+
+  test("BACKUP_FAILED aborts before xochitl is ever stopped, and nothing is written", async () => {
+    execRemoteImpl = textRouter(mapFixtureDump());
+    execRemoteBinaryImpl = async (_target, command) => {
+      events.push(`binary:${command}`);
+      throw new Error("simulated connection drop mid-tar");
+    };
+
+    await expect(
+      reattach(["/Today", "--map", "stroke-orphan=page-live"]),
+    ).rejects.toMatchObject({ code: "BACKUP_FAILED" });
+
+    expect(events.some((e) => e === `text:${STOP_XOCHITL_COMMAND}`)).toBe(false);
+    const files = await (await import("node:fs/promises")).readdir(dir);
+    expect(files.some((f) => f.endsWith(".tar.gz"))).toBe(false);
+  });
+
+  test("a second same-day reattach backup doesn't clobber the first — it gets a -2 suffix", async () => {
+    execRemoteImpl = textRouter(mapFixtureDump());
+    execRemoteBinaryImpl = binaryRouter();
+
+    const first = await reattach(["/Today", "--map", "stroke-orphan=page-live"]);
+    const firstArchive = String((first.reattached as Record<string, unknown>).backup);
+
+    events = [];
+    const second = await reattach(["/Today", "--map", "stroke-orphan-2=page-live"]);
+    const secondArchive = String((second.reattached as Record<string, unknown>).backup);
+
+    expect(secondArchive).not.toBe(firstArchive);
+    expect(secondArchive).toMatch(/-2\.tar\.gz$/);
+    expect(await readFile(firstArchive, "utf8")).toBe("tar-bytes"); // untouched
+  });
+
+  test("--restore-index: NOT_FOUND when the document has no orphans", async () => {
+    execRemoteImpl = textRouter(
+      dumpFor([
+        docBlock({
+          uuid: "doc-3",
+          meta: { visibleName: "Clean", parent: "" },
+          content: { pages: ["page-1"] },
+          rm: [{ uuid: "page-1", size: 1, mtime: 1 }],
+        }),
+      ]),
+    );
+    await expect(reattach(["/Clean", "--restore-index"])).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+  });
+
+  test("--restore-index: HAS_INK refuses before any write when a currently-indexed page carries a stroke, but the backup still runs first", async () => {
+    execRemoteImpl = textRouter(restoreFixtureDump());
+    execRemoteBinaryImpl = binaryRouter({
+      "page-current": fromHex(WITH_STROKE_HEX),
+    });
+
+    await expect(reattach(["/Journal", "--restore-index"])).rejects.toMatchObject({
+      code: "HAS_INK",
+    });
+
+    // The embedded backup ran (a binary tar call happened)...
+    expect(events.some((e) => e.includes("tar czf -"))).toBe(true);
+    // ...but the write ritual never started.
+    expect(events.some((e) => e === `text:${STOP_XOCHITL_COMMAND}`)).toBe(false);
+  });
+
+  test("--restore-index: a zero-stroke current page doesn't block the restore, and the ordering + write are correct", async () => {
+    execRemoteImpl = textRouter(restoreFixtureDump());
+    execRemoteBinaryImpl = binaryRouter({
+      "page-current": fromHex(ZERO_STROKE_HEX),
+    });
+
+    const output = await reattach(["/Journal", "--restore-index"]);
+
+    const reattached = output.reattached as Record<string, unknown>;
+    expect(reattached.mode).toBe("restore-index");
+    expect(reattached.xochitl).toBe("restarted");
+    // orphan-early (mtime 100) sorts before orphan-late (mtime 200).
+    expect(reattached.strokes).toEqual([
+      { stroke: "orphan-early", page: "orphan-early", disposition: "restored" },
+      { stroke: "orphan-late", page: "orphan-late", disposition: "restored" },
+    ]);
+
+    // The base64/streaming .content write actually carries that order.
+    const writeCommand = events.find((e) => e.includes("base64 -d"));
+    expect(writeCommand).toBeDefined();
+    const b64 = /printf '%s' '([^']+)'/.exec(writeCommand!)?.[1];
+    const written = JSON.parse(Buffer.from(b64!, "base64").toString("utf8"));
+    expect(written.pages).toEqual(["orphan-early", "orphan-late"]);
+  });
+
+  test("REATTACH_FAILED when apply fails after xochitl is stopped — restart is still attempted", async () => {
+    execRemoteImpl = async (_target: unknown, command: string) => {
+      events.push(`text:${command}`);
+      if (command === DEVICE_DUMP_COMMAND) return mapFixtureDump();
+      if (command.includes('cp "$D/')) throw new Error("simulated write failure");
+      return "";
+    };
+    execRemoteBinaryImpl = binaryRouter();
+
+    await expect(
+      reattach(["/Today", "--map", "stroke-orphan=page-live"]),
+    ).rejects.toMatchObject({ code: "REATTACH_FAILED" });
+
+    expect(events.some((e) => e === `text:${START_XOCHITL_COMMAND}`)).toBe(true);
+  });
+
+  test("REATTACH_FAILED when xochitl fails to restart, naming the manual recovery step", async () => {
+    execRemoteImpl = async (_target: unknown, command: string) => {
+      events.push(`text:${command}`);
+      if (command === DEVICE_DUMP_COMMAND) return mapFixtureDump();
+      if (command === START_XOCHITL_COMMAND) throw new Error("simulated restart failure");
+      if (command.includes('cp "$D/')) return "OK stroke-orphan page-live";
+      return "";
+    };
+    execRemoteBinaryImpl = binaryRouter();
+
+    try {
+      await reattach(["/Today", "--map", "stroke-orphan=page-live"]);
+      throw new Error("should have thrown");
+    } catch (error) {
+      const axi = error as AxiError;
+      expect(axi.code).toBe("REATTACH_FAILED");
+      expect(axi.suggestions.join(" ")).toContain("systemctl start xochitl");
+    }
+  });
+
+  test("a failed `sync` doesn't fail the command — reported as a help note instead", async () => {
+    execRemoteImpl = async (_target: unknown, command: string) => {
+      events.push(`text:${command}`);
+      if (command === DEVICE_DUMP_COMMAND) return mapFixtureDump();
+      if (command === SYNC_COMMAND) throw new Error("simulated sync failure");
+      if (command.includes('cp "$D/')) return "OK stroke-orphan page-live";
+      return "";
+    };
+    execRemoteBinaryImpl = binaryRouter();
+
+    const output = await reattach(["/Today", "--map", "stroke-orphan=page-live"]);
+    expect(output.reattached).toBeDefined();
+    expect((output.help as string[]).some((h) => h.includes("sync"))).toBe(true);
+  });
+
+  test("xochitl restarting but not yet reporting active doesn't fail the command", async () => {
+    execRemoteImpl = textRouter(mapFixtureDump(), { xochitlActive: "activating" });
+    execRemoteBinaryImpl = binaryRouter();
+
+    const output = await reattach(["/Today", "--map", "stroke-orphan=page-live"]);
+    const reattached = output.reattached as Record<string, unknown>;
+    expect(reattached.xochitl).toBe("restart issued but not yet reporting active");
+    expect((output.help as string[]).some((h) => h.includes("device status"))).toBe(true);
   });
 });

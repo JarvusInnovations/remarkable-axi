@@ -507,3 +507,25 @@ export function formatStorage(facts: DeviceStatusFacts): string {
 export function formatDocuments(facts: DeviceStatusFacts): string {
   return facts.documents !== null ? `${facts.documents} local` : "unknown";
 }
+
+// ---------------------------------------------------------------------------
+// `device reattach` — the write ritual's fixed commands
+// (specs/behaviors/device-access.md#reads-are-free-writes-follow-the-ritual).
+// Every write goes: stop xochitl, apply (elsewhere — path/uuid-specific, so
+// built per-invocation in device-fs.ts), sync, restart, verify. The four
+// commands here are the constant, document-independent bookends; unverified
+// against real hardware like `STATUS_COMMAND` above, but each is a single
+// well-known BusyBox/systemd primitive rather than a composed script, so the
+// surface for firmware drift is small.
+// ---------------------------------------------------------------------------
+
+export const STOP_XOCHITL_COMMAND = "systemctl stop xochitl";
+export const START_XOCHITL_COMMAND = "systemctl start xochitl";
+export const SYNC_COMMAND = "sync";
+
+/** The post-restart verification probe: bare `systemctl is-active` output
+ * (`active`, `inactive`, `failed`, …), trimmed and compared by the caller —
+ * deliberately not reusing the fuller `STATUS_COMMAND` here, since the
+ * ritual only needs the one fact and a smaller command is a smaller surface
+ * for a slow relayed connection to fail on mid-verification. */
+export const XOCHITL_ACTIVE_COMMAND = "systemctl is-active xochitl";

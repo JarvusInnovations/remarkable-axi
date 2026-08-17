@@ -2,14 +2,20 @@ import { describe, expect, test } from "vitest";
 import {
   assertUuidLike,
   backupTarCommand,
+  buildMapApplyCommand,
+  buildRestoreIndexCommand,
+  buildRestoredContent,
   catRmCommand,
   catThumbnailCommand,
   DEVICE_DUMP_COMMAND,
   orphanCandidates,
   parseDeviceDump,
+  parseMapApplyOutput,
   requireOneDeviceMatch,
   resolveDevicePath,
+  restoreOrder,
   type DeviceDoc,
+  type DeviceRmFile,
 } from "../src/device-fs.js";
 
 /** Build one `===DOC ...===` block the way `DEVICE_DUMP_COMMAND` emits it. */
@@ -245,5 +251,104 @@ describe("remote command builders", () => {
   test("DEVICE_DUMP_COMMAND stays inside BusyBox ash: no [[, no arrays, no here-strings", () => {
     expect(DEVICE_DUMP_COMMAND).not.toContain("[[");
     expect(DEVICE_DUMP_COMMAND).not.toContain("<<<");
+  });
+});
+
+describe("device reattach write commands", () => {
+  test("buildMapApplyCommand cps each orphan onto its target and echoes OK/FAIL per pair", () => {
+    const cmd = buildMapApplyCommand("doc-1", [
+      { stroke: "stroke-a", page: "page-a" },
+      { stroke: "stroke-b", page: "page-b" },
+    ]);
+    expect(cmd).toContain('cp "$D/stroke-a.rm" "$D/page-a.rm"');
+    expect(cmd).toContain('cp "$D/stroke-b.rm" "$D/page-b.rm"');
+    expect(cmd).toContain("echo \"OK stroke-a page-a\"");
+    expect(cmd).toContain("echo \"FAIL stroke-a page-a\"");
+    expect(cmd).not.toContain("[[");
+    expect(cmd).not.toContain("<<<");
+  });
+
+  test("buildMapApplyCommand refuses a non-uuid-shaped stroke or page", () => {
+    expect(() =>
+      buildMapApplyCommand("doc-1", [{ stroke: "a; rm -rf /", page: "page-a" }]),
+    ).toThrow();
+    expect(() =>
+      buildMapApplyCommand("doc-1", [{ stroke: "stroke-a", page: "$(whoami)" }]),
+    ).toThrow();
+  });
+
+  test("parseMapApplyOutput matches OK/FAIL lines to pairs in order", () => {
+    const pairs = [
+      { stroke: "stroke-a", page: "page-a" },
+      { stroke: "stroke-b", page: "page-b" },
+    ];
+    const result = parseMapApplyOutput("OK stroke-a page-a\nFAIL stroke-b page-b\n", pairs);
+    expect(result).toEqual([
+      { stroke: "stroke-a", page: "page-a", disposition: "attached" },
+      { stroke: "stroke-b", page: "page-b", disposition: "failed" },
+    ]);
+  });
+
+  test("parseMapApplyOutput treats a missing line (connection dropped mid-stream) as failed", () => {
+    const pairs = [{ stroke: "stroke-a", page: "page-a" }];
+    expect(parseMapApplyOutput("", pairs)).toEqual([
+      { stroke: "stroke-a", page: "page-a", disposition: "failed" },
+    ]);
+  });
+
+  test("buildRestoreIndexCommand base64-encodes the payload and writes via a .new + mv, never raw JSON in the command string", () => {
+    const content = JSON.stringify({ pages: ["a", "b"] });
+    const cmd = buildRestoreIndexCommand("doc-1", content);
+    expect(cmd).not.toContain('"pages"');
+    expect(cmd).toContain("base64 -d");
+    expect(cmd).toContain('> "$D/doc-1.content.new"');
+    expect(cmd).toContain('mv "$D/doc-1.content.new" "$D/doc-1.content"');
+    const b64Match = /printf '%s' '([^']+)'/.exec(cmd);
+    expect(b64Match).not.toBeNull();
+    expect(Buffer.from(b64Match![1]!, "base64").toString("utf8")).toBe(content);
+  });
+
+  test("buildRestoreIndexCommand refuses a non-uuid-shaped doc uuid", () => {
+    expect(() => buildRestoreIndexCommand("doc; rm -rf /", "{}")).toThrow();
+  });
+
+  test("restoreOrder sorts by ascending mtime, unknown mtimes last, uuid as tiebreak", () => {
+    const orphans: DeviceRmFile[] = [
+      { uuid: "z", size: 1, mtime: null },
+      { uuid: "b", size: 1, mtime: 200 },
+      { uuid: "a", size: 1, mtime: 100 },
+      { uuid: "c", size: 1, mtime: null },
+    ];
+    expect(restoreOrder(orphans)).toEqual(["a", "b", "c", "z"]);
+  });
+
+  test("buildRestoredContent replaces a legacy flat pages array and keeps other fields", () => {
+    const result = buildRestoredContent(
+      { pages: ["old-1"], pageCount: 1, fileType: "pdf" },
+      ["new-1", "new-2"],
+    );
+    expect(result).toEqual({ pages: ["new-1", "new-2"], pageCount: 2, fileType: "pdf" });
+  });
+
+  test("buildRestoredContent synthesizes cPages.pages entries with an id and idx when that's the shape present", () => {
+    const result = buildRestoredContent(
+      { cPages: { pages: [{ id: "old-1" }], lastOpened: { timestamp: "1:1", value: "x" } } },
+      ["new-1", "new-2"],
+    );
+    const cPages = (result.cPages as Record<string, unknown>);
+    expect(cPages.lastOpened).toEqual({ timestamp: "1:1", value: "x" });
+    expect(cPages.pages).toEqual([
+      { id: "new-1", idx: { timestamp: "1:1", value: "aa" } },
+      { id: "new-2", idx: { timestamp: "1:1", value: "ab" } },
+    ]);
+  });
+
+  test("buildRestoredContent drops a stale redirectionPageMap and defaults to a flat pages array with no prior content", () => {
+    const result = buildRestoredContent(
+      { pages: ["old-1"], redirectionPageMap: [0] },
+      ["new-1"],
+    );
+    expect(result.redirectionPageMap).toBeUndefined();
+    expect(buildRestoredContent(null, ["new-1"])).toEqual({ pages: ["new-1"] });
   });
 });

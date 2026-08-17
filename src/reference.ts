@@ -266,6 +266,22 @@ export const COMMAND_GROUPS: CommandGroup[] = [
           'remarkable-axi device orphans "/Daily/Today" --render',
         ],
       },
+      {
+        usage:
+          "device reattach <path> --map <stroke-uuid>=<page-uuid>[,...] | --restore-index [--ssh <dest>] [--via <jump>]",
+        summary:
+          "Write recovered strokes back into a document's index — backup, stop xochitl, write, sync, restart",
+        flags: [
+          "--map <s>=<p>[,...]  attach named orphaned strokes to named pages of the current index",
+          "--restore-index      restore .content's pages list back to the orphaned page uuids wholesale",
+          "--ssh <dest>         destination for this invocation only, overriding `setup ssh`",
+          "--via <jump>         ProxyJump hop for this invocation only",
+        ],
+        examples: [
+          'remarkable-axi device reattach "/Daily/Today" --map 8c1d44=a91f03',
+          'remarkable-axi device reattach "/Daily/Today" --restore-index',
+        ],
+      },
     ],
   },
 ];
