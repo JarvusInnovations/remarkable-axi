@@ -1,9 +1,10 @@
 ---
-status: planned
+status: done
 depends: []
 specs:
   - specs/commands/put.md
 issues: []
+pr: 31
 ---
 
 # Help-surface audit fixes
@@ -52,13 +53,13 @@ Out of scope: the design-loop hint chain
 
 ## Validation
 
-- [ ] `put --help` `--replace` line states upload-first ordering and names
+- [x] `put --help` `--replace` line states upload-first ordering and names
       rm-then-put
-- [ ] `rm` of a document emits the `put --replace` hint; `rm` of a folder does not
-- [ ] `devices` output contains no `specs/` path
-- [ ] `login` success hints `setup device <model>`
-- [ ] `page` without `--css` hints `--css`
-- [ ] `grep -rn 'specs/' src` shows no repo-internal path in any user-facing string
+- [x] `rm` of a document emits the `put --replace` hint; `rm` of a folder does not
+- [x] `devices` output contains no `specs/` path
+- [x] `login` success hints `setup device <model>`
+- [x] `page` without `--css` hints `--css`
+- [x] `grep -rn 'specs/' src` shows no repo-internal path in any user-facing string
 
 ## Risks / unknowns
 
@@ -69,8 +70,45 @@ Out of scope: the design-loop hint chain
 
 ## Notes
 
-(Populated at closeout.)
+- All five changes landed exactly as worded in the Approach section. The
+  sweep checked every hint string and every occurrence of the substring
+  `specs/` under `src/`; the `devices` calibration line was the only
+  user-facing leak found. Everything else that matches is a code comment
+  (`//` or JSDoc `/** */`), which the validation rule treats as fine.
+- `rm`'s hint gating is on `node.entry.type !== "CollectionType"` — it fires
+  for a document regardless of whether the removal needed `--force` (that
+  flag only governs non-empty *folder* deletes, never documents), and never
+  fires for a folder, empty or not.
+- `login`'s new hint reuses the exact phrase "to set the device to design
+  for" already used by `setup`'s own USAGE error for a missing subcommand
+  (`src/commands/setup.ts`, the `setup needs a subcommand` branch), so the
+  wording was already an established convention rather than a new one.
+- Three of the five touched commands (`rm`/`mv`/`mkdir` in `organize.ts`,
+  `devices`, and `login`) had no command-level test file before this PR —
+  `test/commands/organize.test.ts`, `test/commands/devices.test.ts`, and
+  `test/commands/login.test.ts` are new, each mocking the cloud/config/token
+  boundary rather than touching the network or this machine's real pairing
+  state (following the pattern already established in `test/home.test.ts`).
+- `bun run test` shows 2 pre-existing failures unrelated to this change:
+  `check.test.ts` and `render.test.ts`'s "no device target and no --device
+  fails NO_DEVICE" cases. Both were failing identically on `develop` before
+  any edit in this PR — this sandbox has real reMarkable pairing/config on
+  disk, and `auth.ts`/`config.ts` resolve their file paths from `homedir()`
+  at module load, so the tests' per-test `HOME` env override can't isolate
+  them (the same constraint `test/commands/setup.test.ts` already documents
+  for `doctor`). Confirmed unrelated by running the full suite before making
+  any change and seeing the same two failures.
 
 ## Follow-ups
 
-(Populated at closeout.)
+- The two pre-existing `NO_DEVICE`-under-real-pairing test failures
+  (`check.test.ts`, `render.test.ts`) are a standing gap in this sandbox's
+  test isolation, not something this plan's scope covers — worth a follow-up
+  plan/issue if the project wants those tests runnable in a paired dev
+  environment (e.g. injecting the config/token paths instead of deriving them
+  from `homedir()` at import time).
+- `organize.ts` (`mkdir`/`mv`/`rm`) still has no test coverage for `mkdir` and
+  `mv`, or for `rm`'s `NOT_FOUND`/`NOT_EMPTY` failure paths — only the hint
+  gating this plan needed was added. A full `organize.test.ts` sweep is
+  reasonable follow-up scope, not done here to stay within this plan's
+  bounded change.
