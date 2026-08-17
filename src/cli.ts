@@ -15,6 +15,7 @@ import { render } from "./commands/render.js";
 import { check } from "./commands/check.js";
 import { mkdir, mv, rm } from "./commands/organize.js";
 import { login, doctor, setup } from "./commands/setup.js";
+import { device } from "./commands/device.js";
 import { version } from "./version.js";
 // Retired verbs, kept only as targeted redirects — see
 // specs/commands/README.md#deprecations.
@@ -77,6 +78,7 @@ export async function main(argv: string[] = process.argv.slice(2)) {
       login: toonOutput(login),
       doctor: toonOutput(doctor),
       setup: toonOutput(setup),
+      device: toonOutput(device),
       // Retired verbs — registered so invoking them by name still produces a
       // targeted redirect instead of a generic unknown-command error.
       send: toonOutput(send),
