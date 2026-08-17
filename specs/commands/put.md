@@ -92,6 +92,11 @@ dated name. It refuses when the destination is ambiguous rather than picking a v
 and it refuses when the target carries ink unless `--discard-ink` is given. All of
 that is [ink-preservation](../behaviors/ink-preservation.md).
 
+Refusal and success both report the target's `last_synced` age, because the ink
+check sees only the cloud's copy — strokes written on-device since the last sync
+are invisible to it, and stating the age puts that risk where the decision is made.
+See [Cloud checks see only synced ink](../behaviors/ink-preservation.md#cloud-checks-see-only-synced-ink).
+
 A failed upload leaves the original untouched: the new document lands first, and the
 old one is trashed only after the upload is confirmed.
 
