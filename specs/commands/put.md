@@ -120,6 +120,24 @@ Warning-not-blocking is deliberate: a hairline that will not resolve on the pane
 worth knowing about, but not worth refusing a document the user already decided to
 ship.
 
+Output gains two fields for an HTML source, alongside the ordinary `uploaded` block:
+
+```
+uploaded:
+  name: Flyer
+  path: /Designs/Flyer
+  size: 41KB
+  format: pdf
+page: 447x596pt (injected)
+findings: clean — every page checked, nothing to report
+help[1]: Run `remarkable-axi ls /Designs` to confirm it landed
+```
+
+`page` states the same disposition [render](render.md) would — injected, matched,
+honored-with-a-delta, or overridden — so the geometry decision is never silent.
+`findings` is exactly [check](check.md)'s findings shape, collapsed the same way, so
+an agent that has learned one schema has learned both.
+
 ## Success output
 
 ```
@@ -146,6 +164,8 @@ Replacing adds the backup — see
 | `--replace` target carries ink, no `--discard-ink` | `HAS_INK` |
 | `--replace` given, nothing at destination | `NOT_FOUND`, suggesting the plain form |
 | HTML source, no device target set | `NO_DEVICE`, naming `setup device` |
+| HTML source, Chrome not found | `MISSING_TOOL`, naming what to install and that `doctor` checks it |
+| `--strict`, an error-severity finding on the rendered PDF | `LINT_FAILED` |
 
 ## Principles
 
