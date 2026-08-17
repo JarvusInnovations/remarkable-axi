@@ -191,7 +191,7 @@ describe("put --replace ink guard", () => {
       code: "HAS_INK",
       message:
         "/Flyer has ink on 3 of 12 pages; --replace would discard it\n" +
-        `last synced ${lastSyncedAge} ago — ink written on-device since then is invisible to this check`,
+        `last synced ${lastSyncedAge} — ink written on-device since then is invisible to this check`,
       suggestions: [
         `save it separately first — remarkable-axi get /Flyer --overlay <file>.pdf`,
         `or replace and let it go — remarkable-axi put ${pdfPath} /Flyer --replace --discard-ink`,
@@ -276,7 +276,7 @@ describe("put --replace ink guard", () => {
       code: "HAS_INK",
       message:
         "/Flyer has ink on 2 of 2 pages; --replace would discard it\n" +
-        `last synced ${lastSyncedAge} ago — ink written on-device since then is invisible to this check`,
+        `last synced ${lastSyncedAge} — ink written on-device since then is invisible to this check`,
     });
   });
 });
@@ -335,7 +335,7 @@ describe("put --replace stroke-bearing HAS_INK (closes #28)", () => {
       code: "HAS_INK",
       message:
         "/Flyer has ink on 1 of 5 pages; --replace would discard it\n" +
-        `last synced ${lastSyncedAge} ago — ink written on-device since then is invisible to this check`,
+        `last synced ${lastSyncedAge} — ink written on-device since then is invisible to this check`,
     });
     // All 3 candidate `.rm` entries (1 inked + 2 opened-only) were checked.
     expect(calls.getRm).toBe(3);
@@ -361,7 +361,7 @@ describe("put --replace stroke-bearing HAS_INK (closes #28)", () => {
       code: "HAS_INK",
       message:
         "/Flyer has ink on 1 of 5 pages; --replace would discard it\n" +
-        `last synced ${lastSyncedAge} ago — ink written on-device since then is invisible to this check`,
+        `last synced ${lastSyncedAge} — ink written on-device since then is invisible to this check`,
     });
   });
 });

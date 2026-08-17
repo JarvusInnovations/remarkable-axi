@@ -434,7 +434,7 @@ export async function put(args: string[]): Promise<Output> {
       if (ink) {
         throw new AxiError(
           `${destPath} has ink on ${ink.inkedPages} of ${ink.totalPages} pages; --replace would discard it\n` +
-            `last synced ${lastSynced} ago — ink written on-device since then is invisible to this check`,
+            `last synced ${lastSynced} — ink written on-device since then is invisible to this check`,
           "HAS_INK",
           [
             `save it separately first — remarkable-axi get ${destPath} --overlay <file>.pdf`,
