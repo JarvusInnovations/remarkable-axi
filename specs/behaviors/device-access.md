@@ -18,9 +18,18 @@ in [ink-preservation](ink-preservation.md#cloud-checks-see-only-synced-ink).
 
 ### Connectivity: a destination, not a topology
 
-The tablet exposes SSH on its LAN when enabled (Settings → Help → About). Whether
-the machine running this tool can reach that LAN directly varies — a laptop on the
-same Wi-Fi can; a remote devbox cannot and needs a relay through a machine that can.
+The tablet exposes SSH on its WLAN address when enabled (Settings → Help → About).
+Whether the machine running this tool can reach that address directly varies — a
+laptop on the same Wi-Fi can; a remote devbox cannot and needs a relay through a
+machine that can.
+
+SSH arriving over WLAN means the device's Wi-Fi is necessarily on during
+recovery — the same channel sync arrives on. The discipline that squares this is
+**hands off the tablet**: from the moment loss is suspected until recovery
+completes, nobody opens documents, writes, or launches the desktop app (a known
+sync-cascade trigger). Orphaned strokes are unreferenced files — sync alone does
+not reclaim them; *use* does — and the backup tar as recovery's first act bounds
+the loss even if something does move.
 
 The tool therefore takes an SSH **destination** and delegates topology to the
 system's own `ssh`:

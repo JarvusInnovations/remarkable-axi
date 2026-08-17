@@ -17,10 +17,14 @@ skill *uniquely* owns is the content that cannot live in command output because 
 is entered from a **symptom**, not from a command:
 
 - **The ink-recovery playbook** — the meatiest section. Triage ("cloud shows zero
-  ink" → orphaned vs merely-unsynced vs trashed-but-local), the freeze-the-device
-  discipline (Wi-Fi off, stop opening documents, before anything else), the
-  recovery sequence across the [device commands](commands/device.md) with the
-  thumbnail eye-match judgment step in the middle, mode choice
+  ink" → orphaned vs merely-unsynced vs trashed-but-local); the hands-off
+  discipline — from the moment loss is suspected until recovery completes, nobody
+  opens documents, writes, or launches the desktop app; the device's Wi-Fi stays
+  *on* because SSH arrives over it, and the backup tar as recovery's first act is
+  what bounds the exposure (see
+  [device-access](behaviors/device-access.md#connectivity-a-destination-not-a-topology));
+  then the recovery sequence across the [device commands](commands/device.md) with
+  the thumbnail eye-match judgment step in the middle, mode choice
   (`--map` vs `--restore-index`), and post-recovery verification that the ink is
   live and syncing. Grounded in the mechanism defined in
   [ink-preservation](behaviors/ink-preservation.md#cloud-checks-see-only-synced-ink).
@@ -35,6 +39,34 @@ Command reference material in the skill is **generated from `reference.ts`**
 (the single-source rule in [architecture](architecture.md#command-surface-has-one-source)),
 with a CI check that fails when the committed skill is stale. The playbook sections
 are hand-authored; they cite commands by name and never restate their flags.
+
+## Structure
+
+One skill, progressive disclosure, sub-procedures broken out:
+
+```
+skill/
+├── SKILL.md            lean — orientation, the workflows in brief, the generated
+│                       command-reference region, and pointers into references/
+└── references/
+    ├── ink-recovery.md the incident playbook (triage → hands-off → backup →
+    │                   identify → reattach → verify)
+    └── ssh-setup.md    the one-time device-SSH walkthrough (enable, key install,
+                        destination vs --via)
+```
+
+SKILL.md stays in lavish-axi's register: short, workflow-first, every command
+example runnable without a global install (`npx -y remarkable-axi …`), and each
+reference file named from SKILL.md with a one-line cue for *when* to open it —
+the frontmatter description triggers the skill; the reference files load only
+when their procedure is actually in play. A sub-procedure earns a reference file
+when it would otherwise bloat SKILL.md past quick-orientation size; it merges
+back in if it withers to a paragraph.
+
+The skill is built and iterated with the skill-creator loop — draft, run
+realistic test prompts (including symptom-phrased ones like "my handwriting from
+this morning is gone"), review, tighten — and its description is
+trigger-optimized against should/should-not-trigger cases before it ships.
 
 ## Triggers
 
