@@ -238,6 +238,39 @@ describe.skipIf(gs === null)("check command", () => {
     });
   });
 
+  describe("the design-loop hints", () => {
+    test("images written: the eye-pass hint names the first image, then the put hint carries the checked file", async () => {
+      const pdf = await writePdf("design-loop.pdf");
+      const output = await check([pdf, "--device", "paper-pro"]);
+      const help = output.help as string[];
+      const images = output.images as { page: number; path: string }[];
+
+      const eyePass = help.find((h) => h.startsWith("Read "));
+      expect(eyePass).toBeDefined();
+      expect(eyePass).toContain(images[0]!.path);
+      expect(eyePass).toContain("critique the layout by eye");
+
+      const put = help.find((h) => h.includes("remarkable-axi put"));
+      expect(put).toBeDefined();
+      expect(put).toContain("design-loop.pdf");
+      expect(put).toContain("<dest>");
+      expect(put).toContain("once the layout reads well");
+
+      // Eye-pass leads the chain — it's the first help line.
+      expect(help[0]).toBe(eyePass);
+      expect(help.indexOf(eyePass!)).toBeLessThan(help.indexOf(put!));
+    });
+
+    test("--no-images: neither the eye-pass nor the put hint appears", async () => {
+      const pdf = await writePdf("no-images-hints.pdf");
+      const output = await check([pdf, "--device", "paper-pro", "--no-images"]);
+      const help = (output.help as string[] | undefined) ?? [];
+      expect(help.some((h) => h.startsWith("Read "))).toBe(false);
+      expect(help.some((h) => h.includes("remarkable-axi put"))).toBe(false);
+    });
+
+  });
+
   test("bleed is flagged when the CropBox is smaller than the MediaBox", async () => {
     const doc = await PDFDocument.create();
     const page = doc.addPage([460, 610]);
@@ -359,6 +392,18 @@ describe.skipIf(gs === null)("check command", () => {
       const output = await check([html, "--device", "rm2", "--pages", "1"]);
       expect((output.help as string[]).join(" ")).toContain("--pages 1");
       expect((output.help as string[]).join(" ")).toContain("after editing");
+    });
+
+    test("an HTML source with images gets the eye-pass and put hints too, re-check hint last", async () => {
+      const html = await writeHtml("full-loop.html", "<html><body>x</body></html>");
+      const output = await check([html, "--device", "rm2"]);
+      const help = output.help as string[];
+
+      expect(help[0]).toContain("critique the layout by eye");
+      expect(help.some((h) => h.includes("remarkable-axi put") && h.includes("full-loop.html"))).toBe(true);
+      // The re-check hint (HTML-only) still fires, and lands after the
+      // design-loop pair rather than displacing it.
+      expect(help.at(-1)).toContain("after editing to re-check");
     });
   });
 });
