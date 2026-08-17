@@ -57,19 +57,22 @@ export const COMMAND_GROUPS: CommandGroup[] = [
         ],
       },
       {
-        usage: "check <file> [--pages <spec>] [--device <model>] [--out <dir>] [--no-images]",
+        usage:
+          "check <file> [--pages <spec>] [--device <model>] [--out <dir>] [--full-res] [--no-images]",
         summary:
           "Rasterize a PDF or HTML document at the device's density and lint it against the panel",
         flags: [
           "--pages <spec>    pages to image, e.g. 1,3,7-9 (default: all); restricts images only, never findings",
           "--device <model>  check against a model other than the configured target",
           "--out <dir>       where page images are written (default: a temp directory, reported)",
+          "--full-res        write page images at the device's native resolution instead of preview scale",
           "--no-images       findings only",
         ],
         examples: [
           "remarkable-axi check flyer.pdf",
           "remarkable-axi check flyer.html --pages 1",
           "remarkable-axi check deck.pdf --no-images",
+          "remarkable-axi check flyer.pdf --full-res",
         ],
       },
     ],

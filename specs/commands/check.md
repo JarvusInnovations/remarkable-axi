@@ -41,8 +41,10 @@ Two things do not vary with the preview scale:
 - **Findings are always measured at native density.** Rasterization for the lint
   rules happens at the device's own resolution regardless of what image is written;
   the scale affects only the artifact handed back.
-- **The native size is always stated** in the output next to the preview size, so a
-  smaller image can never pass for the full measurement.
+- **The native size is always stated** in the output next to the preview size — the
+  `image_scale:` line, emitted exactly when a downscale happened — so a smaller
+  image can never pass for the full measurement. (At native scale the header's own
+  `rasterized at …` line is the size statement, and the line is omitted.)
 
 `--full-res` writes native-resolution images instead, for the cases the preview
 genuinely underserves: a human inspecting line work pixel-for-pixel, or a caller
@@ -116,7 +118,7 @@ page_box: 447x596pt — matches RM110 (calibrated)
 findings[2]{pages,severity,check,detail}:
   "1-10",warn,contrast,"#a8a8a8 rules on #fff — 2 levels apart on a 16-level panel"
   "1,4-9",warn,hairlines,"0.4pt rule — below 0.7pt resolvable at 226dpi"
-images: 1 page at 1176x1568 (preview of native 1404x1872)
+image_scale: 1176x1568 (preview of native 1404x1872)
 images[1]{page,path}:
   1,/tmp/…/check-p1.png
 help[4]:
