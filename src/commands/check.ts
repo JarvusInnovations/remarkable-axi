@@ -29,6 +29,7 @@ import {
 import { bleedFinding, noPageDeclarationFinding, pageBoxFinding } from "../lint/geometry.js";
 import { render } from "./render.js";
 import { parsePageSelection } from "./get.js";
+import { eyePassHint, putHint } from "../hints.js";
 
 const HTML_EXTENSIONS = new Set([".html", ".htm"]);
 
@@ -335,16 +336,26 @@ export async function check(args: string[]): Promise<Output> {
       output.images = images.length > 0 ? images : "no pages selected for imaging";
     }
 
+    // The design-loop chain (specs/behaviors/design-loop.md): the eye-pass
+    // hint names the first written image — the one step no finding
+    // measures — and the put hint carries the checked file forward as the
+    // loop's exit. Both are gated on an image having actually been written;
+    // `--no-images` (or a document with no pages to image) means there is
+    // nothing to look at yet, so neither hint fires.
     const help: string[] = [];
+    if (!noImages && images.length > 0) {
+      help.push(eyePassHint(images[0]!.path));
+    }
+    if (anyDownscaled) {
+      help.push(`Run \`remarkable-axi check ${collapseHome(file)} --full-res\` for native-resolution images`);
+    }
+    if (!noImages && images.length > 0) {
+      help.push(putHint(collapseHome(file)));
+    }
     if (isHtml) {
       help.push(
         `Run \`remarkable-axi check ${collapseHome(file)}${pagesFlag ? ` --pages ${pagesFlag}` : ""}\` after editing to re-check`,
       );
-    } else if (!noImages && images.length > 0) {
-      help.push("Open the page images above to see exactly what each finding is pointing at");
-    }
-    if (anyDownscaled) {
-      help.push(`Run \`remarkable-axi check ${collapseHome(file)} --full-res\` for native-resolution images`);
     }
     if (help.length > 0) output.help = help;
 
