@@ -56,6 +56,7 @@ export async function login(args: string[]): Promise<Output> {
     },
     help: [
       "Run `remarkable-axi` to see your tablet contents",
+      "Run `remarkable-axi setup device <model>` to set the device to design for",
       "Run `remarkable-axi setup hooks` so agents see tablet state automatically",
     ],
   };

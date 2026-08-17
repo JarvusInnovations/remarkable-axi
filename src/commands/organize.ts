@@ -155,8 +155,19 @@ export async function rm(args: string[]): Promise<Output> {
 
   await recordMutation(api, { remove: [node.entry.id] });
 
+  const help = ["Restore it from the trash on the device if this was a mistake"];
+  // Only a document can be the target of `put --replace` — a folder removal
+  // is never the rm-then-put pattern this hint teaches around, so it's
+  // withheld there. See specs/commands/put.md, "rm then put is the same
+  // intent in the unsafe order".
+  if (node.entry.type !== "CollectionType") {
+    help.push(
+      `Replacing it? Run \`remarkable-axi put <src> ${path} --replace\` to do this in one safe motion`,
+    );
+  }
+
   return {
     trashed: { name: node.entry.visibleName, path },
-    help: ["Restore it from the trash on the device if this was a mistake"],
+    help,
   };
 }
