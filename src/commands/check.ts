@@ -19,6 +19,7 @@ import { describeDelta, detectPageBox, parseDeclaredPageBox } from "../page.js";
 import { findGhostscript } from "../gs.js";
 import { rasterizePage } from "../lint/rasterize.js";
 import { encodeGrayscalePng } from "../lint/png.js";
+import { downscaleGrayscale, fitDimensions, type Dimensions } from "../lint/resample.js";
 import {
   checkContrast,
   checkHairlines,
@@ -33,6 +34,29 @@ const HTML_EXTENSIONS = new Set([".html", ".htm"]);
 
 function fmtBox(box: PageBox): string {
   return `${box.width}x${box.height}pt`;
+}
+
+/**
+ * Summarize the written page images as one line: a page count and the
+ * dimensions actually written, plus the native size whenever those differ
+ * — so a preview-scaled image can never be mistaken for the full
+ * measurement (specs/commands/check.md#page-images-are-previews-by-default).
+ *
+ * Sized off the first written image. Every page shares one device target
+ * and dpi, so native and preview dimensions are normally uniform across a
+ * document's images; `page_box`'s own summary line makes the same
+ * first-page simplification for the page box itself, and a per-page size
+ * mismatch (a document with mixed page sizes) still surfaces as a `page
+ * box` finding rather than going unreported here.
+ */
+function imagesSummary(sizes: { native: Dimensions; written: Dimensions }[]): string {
+  const first = sizes[0]!;
+  const plural = sizes.length === 1 ? "page" : "pages";
+  const downscaled = first.written.width !== first.native.width || first.written.height !== first.native.height;
+  const size = downscaled
+    ? `${first.written.width}x${first.written.height} (preview of native ${first.native.width}x${first.native.height})`
+    : `${first.native.width}x${first.native.height}`;
+  return `${sizes.length} ${plural} at ${size}`;
 }
 
 const CHECK_NAME_ORDER: Record<Finding["check"], number> = {
@@ -126,7 +150,7 @@ async function exists(path: string): Promise<boolean> {
 export async function check(args: string[]): Promise<Output> {
   const parsed = parseFlags("check", args, {
     value: ["--pages", "--device", "--out"],
-    boolean: ["--no-images"],
+    boolean: ["--no-images", "--full-res"],
   });
 
   const file = requirePositional(
@@ -243,8 +267,15 @@ export async function check(args: string[]): Promise<Output> {
       }
     }
 
+    const fullRes = bool(parsed, "--full-res");
     const base = basename(file, extname(file)) || "document";
     const images: { page: number; path: string }[] = [];
+    // Parallel to `images` — the native and (possibly downscaled) pixel
+    // dimensions actually written for that same page, kept out of the
+    // reported table (which only ever shows `page`/`path`, per
+    // specs/commands/check.md) and used solely to build the `images:`
+    // summary line below.
+    const imageSizes: { native: Dimensions; written: Dimensions }[] = [];
 
     // Every page is rasterized regardless of `--pages` — findings must
     // cover the whole document (specs/commands/check.md); `--pages` only
@@ -253,6 +284,9 @@ export async function check(args: string[]): Promise<Output> {
       const pageNum = i + 1;
       const raster = await rasterizePage(gs.path, pdfPath, pageNum, dpi);
 
+      // Findings always measure the native-density raster returned by
+      // `rasterizePage` above — the preview downscale below is applied
+      // only when writing the image out, after every rule has already run.
       const hairline = checkHairlines(raster, pageNum, dpi, {
         gsVersion: gs.version,
       });
@@ -263,10 +297,18 @@ export async function check(args: string[]): Promise<Output> {
       if (typeSize) findings.push(typeSize);
 
       if (outDir && selectedSet.has(i)) {
-        const png = encodeGrayscalePng(raster.width, raster.height, raster.pixels);
+        const native: Dimensions = { width: raster.width, height: raster.height };
+        const target = fullRes ? native : fitDimensions(raster.width, raster.height);
+        const downscaled = target.width !== native.width || target.height !== native.height;
+        const pixels = downscaled
+          ? downscaleGrayscale(raster.pixels, native.width, native.height, target.width, target.height)
+          : raster.pixels;
+
+        const png = encodeGrayscalePng(target.width, target.height, pixels);
         const path = join(outDir, `${base}-p${pageNum}.png`);
         await writeFile(path, png);
         images.push({ page: pageNum, path: collapseHome(path) });
+        imageSizes.push({ native, written: target });
       }
     }
 
@@ -283,8 +325,16 @@ export async function check(args: string[]): Promise<Output> {
           : "clean — every page checked, nothing to report",
     };
 
+    // At least one written image was downscaled from its native raster —
+    // the trigger for the mandatory `--full-res` escape-hatch hint below
+    // (specs/commands/check.md#page-images-are-previews-by-default).
+    const anyDownscaled = imageSizes.some(
+      (s) => s.written.width !== s.native.width || s.written.height !== s.native.height,
+    );
+
     if (!noImages) {
-      output.images = images.length > 0 ? images : "no pages selected for imaging";
+      output.images = images.length > 0 ? imagesSummary(imageSizes) : "no pages selected for imaging";
+      if (images.length > 0) output.image_files = images;
     }
 
     const help: string[] = [];
@@ -294,6 +344,9 @@ export async function check(args: string[]): Promise<Output> {
       );
     } else if (!noImages && images.length > 0) {
       help.push("Open the page images above to see exactly what each finding is pointing at");
+    }
+    if (anyDownscaled) {
+      help.push(`Run \`remarkable-axi check ${collapseHome(file)} --full-res\` for native-resolution images`);
     }
     if (help.length > 0) output.help = help;
 
