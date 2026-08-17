@@ -70,11 +70,11 @@ describe("renderCommandHelp", () => {
   test("renders put's flags and examples as block-form TOON arrays, one entry per line", () => {
     const help = renderCommandHelp("put");
     expect(help).toContain("usage: remarkable-axi put <src> <dest>");
-    expect(help).toContain("flags[3]:");
+    expect(help).toContain("flags[5]:");
     expect(help).toContain(
       "  --replace        swap the contents of the document already at <dest>",
     );
-    expect(help).toContain("examples[4]:");
+    expect(help).toContain("examples[5]:");
     expect(help).toContain(
       '  remarkable-axi put "https://example.com/post" /Articles',
     );
