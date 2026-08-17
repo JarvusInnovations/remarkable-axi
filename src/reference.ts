@@ -205,6 +205,36 @@ export const COMMAND_GROUPS: CommandGroup[] = [
           "Install SessionStart hooks so agents see tablet state automatically",
         examples: ["remarkable-axi setup hooks"],
       },
+      {
+        usage: "setup ssh <destination> [--via <jump>]",
+        summary:
+          "Configure direct or relayed SSH access to the tablet, for the device command group",
+        flags: [
+          "--via <jump>  ProxyJump hop, for when this machine isn't on the tablet's own network",
+        ],
+        examples: [
+          "remarkable-axi setup ssh root@192.168.1.37",
+          "remarkable-axi setup ssh root@192.168.1.37 --via mbp-2024",
+        ],
+      },
+    ],
+  },
+  {
+    group: "Device",
+    commands: [
+      {
+        usage: "device status [--ssh <dest>] [--via <jump>]",
+        summary:
+          "Check tablet reachability, xochitl, storage free, and local document count",
+        flags: [
+          "--ssh <dest>  destination for this invocation only, overriding `setup ssh`",
+          "--via <jump>  ProxyJump hop for this invocation only",
+        ],
+        examples: [
+          "remarkable-axi device status",
+          "remarkable-axi device status --ssh root@192.168.1.50",
+        ],
+      },
     ],
   },
 ];
