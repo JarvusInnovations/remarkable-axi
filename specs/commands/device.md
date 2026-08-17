@@ -88,6 +88,14 @@ Write recovered strokes back into a live document's index — the one writing co
 governed in full by the [write ritual](../behaviors/device-access.md#reads-are-free-writes-follow-the-ritual):
 automatic backup first (refuse if it fails), stop xochitl, write, sync, restart.
 
+Every argument is checked against the *current* dump before either the backup or the
+write happens — an invalid `--map` pair or an index with nothing to restore fails
+before any device state changes. The `HAS_INK` gate runs after the backup (so a
+refused restore still leaves an archive behind) but still before xochitl is stopped.
+If the ritual itself fails after that point — the write, `sync`, or the restart —
+xochitl is always given a restart attempt regardless, and the failure names the
+backup already captured plus whether xochitl came back.
+
 Two modes, matching the two incident shapes:
 
 - `--map <stroke-uuid>=<page-uuid>[,...]` — attach named orphans to named pages of
@@ -125,7 +133,10 @@ guesses a mapping.
 | `<path>` matches several documents | `AMBIGUOUS`, listing uuids |
 | `backup`'s archive destination exists | `EXISTS` unless `--force` |
 | `reattach` backup step failed | `BACKUP_FAILED` — nothing written |
+| `--map` names a stroke that isn't a current orphan, or a page not in the current index | `NOT_FOUND` |
+| `--restore-index` on a document with no orphaned pages | `NOT_FOUND` |
 | `--restore-index` would orphan current ink | `HAS_INK`, naming the inked pages |
+| the write ritual fails after xochitl is stopped (apply, `sync`, or restart) | `REATTACH_FAILED` — the archive from step 1 is named, and whether xochitl came back is reported honestly either way |
 
 ## Relationship to the rest of the surface
 
