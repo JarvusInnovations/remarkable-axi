@@ -9,7 +9,7 @@ import { discardCache, loadTree } from "../cache.js";
 import { readConfig } from "../config.js";
 import { age } from "../time.js";
 import { setupDevice } from "./devices.js";
-import { setupSsh } from "./device.js";
+import { accountOrphanCount, setupSsh } from "./device.js";
 import { findChrome } from "../chrome.js";
 import { findGhostscript } from "../gs.js";
 import {
@@ -87,6 +87,11 @@ async function probeDevice(): Promise<Record<string, unknown> | undefined> {
   try {
     const stdout = await execRemote(target, STATUS_COMMAND);
     const facts = parseStatusOutput(stdout);
+    // Best-effort, separate from the status probe above: a second read of
+    // the same device, but never lets an orphan-count hiccup take down the
+    // reachability facts that just succeeded — see accountOrphanCount's own
+    // doc comment (src/commands/device.ts).
+    const orphans = await accountOrphanCount(target);
     return {
       destination: target.destination,
       ...(target.via ? { via: target.via } : {}),
@@ -94,6 +99,7 @@ async function probeDevice(): Promise<Record<string, unknown> | undefined> {
       xochitl: formatXochitl(facts),
       storage: formatStorage(facts),
       documents: formatDocuments(facts),
+      orphans: orphans !== null ? orphans : "unknown",
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

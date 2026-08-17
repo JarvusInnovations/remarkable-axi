@@ -3,6 +3,7 @@ import { AxiError } from "axi-sdk-js";
 import {
   buildSshArgs,
   execRemote,
+  execRemoteBinary,
   findSsh,
   formatDocuments,
   formatStorage,
@@ -11,7 +12,9 @@ import {
   resetSshCache,
   resolveSshTarget,
   STATUS_COMMAND,
+  type BinaryRunResult,
   type RunResult,
+  type SshBinaryRunner,
   type SshRunner,
 } from "../src/device.js";
 
@@ -220,6 +223,113 @@ describe("execRemote", () => {
         runner: fakeRunner({ stdout: "hi", stderr: "", code: 0 }),
       }),
     ).rejects.toMatchObject({ code: "MISSING_TOOL" });
+  });
+
+  test("opts.timeoutMs overrides the default 15s ceiling", async () => {
+    let seenTimeout: number | undefined;
+    const runner: SshRunner = async (_bin, _args, opts) => {
+      seenTimeout = opts.timeoutMs;
+      return { stdout: "ok", stderr: "", code: 0 };
+    };
+    await execRemote(target, "echo hi", { runner, timeoutMs: 60_000 });
+    expect(seenTimeout).toBe(60_000);
+  });
+});
+
+describe("execRemoteBinary", () => {
+  const target = { destination: "root@192.168.1.37" };
+
+  afterEach(() => {
+    resetSshCache();
+    delete process.env.REMARKABLE_AXI_SSH;
+  });
+
+  function fakeBinaryRunner(result: BinaryRunResult): SshBinaryRunner {
+    return async () => result;
+  }
+
+  test("returns stdout as a Buffer on a clean exit — binary-safe, not decoded as text", async () => {
+    const bytes = Buffer.from([0x00, 0xff, 0x1a, 0x2b, 0x50, 0x4b]);
+    const stdout = await execRemoteBinary(target, "tar czf - x", {
+      runner: fakeBinaryRunner({ stdout: bytes, stderr: "", code: 0 }),
+    });
+    expect(Buffer.isBuffer(stdout)).toBe(true);
+    expect(stdout).toEqual(bytes);
+  });
+
+  test("a nonzero exit is DEVICE_UNREACHABLE — identical translation to execRemote", async () => {
+    await expect(
+      execRemoteBinary(target, "tar czf - x", {
+        runner: fakeBinaryRunner({
+          stdout: Buffer.alloc(0),
+          stderr: "ssh: connect to host 192.168.1.37 port 22: Connection refused",
+          code: 255,
+        }),
+      }),
+    ).rejects.toMatchObject({ code: "DEVICE_UNREACHABLE" });
+  });
+
+  test("a Permission denied failure gets the same key-install steps as execRemote", async () => {
+    try {
+      await execRemoteBinary(target, "tar czf - x", {
+        runner: fakeBinaryRunner({
+          stdout: Buffer.alloc(0),
+          stderr: "root@192.168.1.37: Permission denied (publickey,password).",
+          code: 255,
+        }),
+      });
+      throw new Error("should have thrown");
+    } catch (error) {
+      const axi = error as AxiError;
+      expect(axi.code).toBe("DEVICE_UNREACHABLE");
+      expect(axi.suggestions.join(" ")).toContain("ssh-copy-id");
+    }
+  });
+
+  test("ssh binary not found is MISSING_TOOL", async () => {
+    process.env.REMARKABLE_AXI_SSH = "/no/such/ssh-binary-here";
+    resetSshCache();
+    await expect(
+      execRemoteBinary(target, "tar czf - x", {
+        runner: fakeBinaryRunner({ stdout: Buffer.alloc(0), stderr: "", code: 0 }),
+      }),
+    ).rejects.toMatchObject({ code: "MISSING_TOOL" });
+  });
+
+  test("a via'd target names both hops in the unreachable message", async () => {
+    try {
+      await execRemoteBinary(
+        { destination: "root@192.168.1.37", via: "mbp-2024" },
+        "tar czf - x",
+        {
+          runner: fakeBinaryRunner({ stdout: Buffer.alloc(0), stderr: "timed out", code: 255 }),
+        },
+      );
+      throw new Error("should have thrown");
+    } catch (error) {
+      const axi = error as AxiError;
+      expect(axi.message).toContain("root@192.168.1.37 via mbp-2024");
+    }
+  });
+
+  test("defaults to a generous timeout, sized for a tar stream rather than a status probe", async () => {
+    let seenTimeout: number | undefined;
+    const runner: SshBinaryRunner = async (_bin, _args, opts) => {
+      seenTimeout = opts.timeoutMs;
+      return { stdout: Buffer.alloc(0), stderr: "", code: 0 };
+    };
+    await execRemoteBinary(target, "tar czf - x", { runner });
+    expect(seenTimeout).toBeGreaterThan(15_000);
+  });
+
+  test("opts.timeoutMs still overrides the default for one call", async () => {
+    let seenTimeout: number | undefined;
+    const runner: SshBinaryRunner = async (_bin, _args, opts) => {
+      seenTimeout = opts.timeoutMs;
+      return { stdout: Buffer.alloc(0), stderr: "", code: 0 };
+    };
+    await execRemoteBinary(target, "tar czf - x", { runner, timeoutMs: 5_000 });
+    expect(seenTimeout).toBe(5_000);
   });
 });
 

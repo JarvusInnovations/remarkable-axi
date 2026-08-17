@@ -4,7 +4,7 @@
 
 ```
 device status  [--ssh <dest>] [--via <jump>]
-device backup  <path> [--out <tar>] [--ssh <dest>] [--via <jump>]
+device backup  <path> [--out <tar>] [--force] [--ssh <dest>] [--via <jump>]
 device orphans [<path>] [--render] [--out <dir>] [--ssh <dest>] [--via <jump>]
 device reattach <path> --map <stroke-uuid>=<page-uuid>[,...] | --restore-index
 ```
@@ -52,6 +52,10 @@ backup:
 
 A stroke-file count exceeding the indexed page count is surfaced here — backup is
 where orphans are usually first noticed.
+
+`--force` overwrites an existing archive at the destination, matching
+[get](get.md)'s own `--force` — the default refuses (`EXISTS`) rather than
+silently clobbering a prior backup.
 
 ## device orphans
 
@@ -119,6 +123,7 @@ guesses a mapping.
 | destination unreachable / auth failed | `DEVICE_UNREACHABLE`, with the key-install steps on auth failure |
 | `<path>` matches nothing on the device | `NOT_FOUND` |
 | `<path>` matches several documents | `AMBIGUOUS`, listing uuids |
+| `backup`'s archive destination exists | `EXISTS` unless `--force` |
 | `reattach` backup step failed | `BACKUP_FAILED` — nothing written |
 | `--restore-index` would orphan current ink | `HAS_INK`, naming the inked pages |
 

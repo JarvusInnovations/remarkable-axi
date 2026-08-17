@@ -235,6 +235,37 @@ export const COMMAND_GROUPS: CommandGroup[] = [
           "remarkable-axi device status --ssh root@192.168.1.50",
         ],
       },
+      {
+        usage: "device backup <path> [--out <tar>] [--force] [--ssh <dest>] [--via <jump>]",
+        summary:
+          "Tar a document's complete on-device file set to a local archive — the first step of every recovery",
+        flags: [
+          "--out <tar>   where to write (default: ./<name>-device-backup-<date>.tar.gz)",
+          "--force       overwrite an existing archive at the destination",
+          "--ssh <dest>  destination for this invocation only, overriding `setup ssh`",
+          "--via <jump>  ProxyJump hop for this invocation only",
+        ],
+        examples: [
+          'remarkable-axi device backup "/Daily/Today"',
+          'remarkable-axi device backup "/Daily/Today" --out ~/backups/today.tar.gz',
+        ],
+      },
+      {
+        usage:
+          "device orphans [<path>] [--render] [--out <dir>] [--ssh <dest>] [--via <jump>]",
+        summary:
+          "List .rm stroke files no page index references — the tablet's own unsynced/clobbered ink",
+        flags: [
+          "--render      composite each orphan to a preview image alongside its surviving thumbnail",
+          "--out <dir>   where renders/thumbnails land with --render (default: a temp directory, reported)",
+          "--ssh <dest>  destination for this invocation only, overriding `setup ssh`",
+          "--via <jump>  ProxyJump hop for this invocation only",
+        ],
+        examples: [
+          "remarkable-axi device orphans",
+          'remarkable-axi device orphans "/Daily/Today" --render',
+        ],
+      },
     ],
   },
 ];
