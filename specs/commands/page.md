@@ -38,6 +38,14 @@ html, body { width: 447pt; height: 596pt; margin: 0; }
 The custom properties are there so internal layout math references the page box by
 name rather than by a repeated literal.
 
+Both forms end with the [design-loop](../behaviors/design-loop.md) hint — `page` is
+the entry point of the chain, and its next stage is the authoring loop:
+
+```
+help[1]:
+  Run `remarkable-axi check <html>` as you iterate — it renders and lints in one call, before any upload
+```
+
 ## Relationship to render
 
 `page` reports; [render](render.md) enforces. An author who never runs `page` still
@@ -60,3 +68,7 @@ write for them.
   — the reason a command exists purely to hand over geometry.
 - [Ambient context must not cost account size](../principles.md#ambient-context-must-not-cost-account-size)
   — `page` touches no cloud state, so it stays instant on any account.
+- The design-loop's local principle,
+  [the tool teaches the loop standalone](../behaviors/design-loop.md#principles)
+  — this command's hint is the chain's first link and lives in stdout, not in a
+  skill or hook.
