@@ -10,15 +10,34 @@ import type { Finding } from "./rules.js";
  *
  * Returns `null` when the page matches — a clean page contributes no
  * finding at all, not a "matches" row.
+ *
+ * When the declared box is exactly the device box with width and height
+ * swapped, the raw signed delta ("165pt wider, 196pt taller" against a
+ * device box it's actually just rotated from) reads as a defect it isn't —
+ * a landscape design reads fine on the portrait panel by panning or device
+ * rotation. That interpretation only follows from doing the transpose
+ * arithmetic in your head, so the finding says it outright instead
+ * (specs/commands/check.md's page-box row). This wording lives here, in the
+ * finding builder, rather than in the shared `describeDelta` — `render`'s
+ * `page:` disposition line goes through `describeDelta` directly and must
+ * keep reporting the plain signed delta regardless of transposition.
  */
 export function pageBoxFinding(page: number, declared: PageBox, device: PageBox): Finding | null {
   const detection = detectPageBox(declared, device);
   if (detection.status !== "differs") return null;
+
+  const transposedDevice: PageBox = { width: device.height, height: device.width };
+  const isTransposed = detectPageBox(declared, transposedDevice).status === "matches";
+
+  const detail = isTransposed
+    ? `${declared.width}x${declared.height}pt — landscape page (device box ${device.width}x${device.height}pt transposed) — reads on the portrait panel by panning or device rotation, expected for a landscape design`
+    : `${declared.width}x${declared.height}pt — ${describeDelta(detection.delta)} than the device box (${device.width}x${device.height}pt)`;
+
   return {
     page,
     severity: "warn",
     check: "page box",
-    detail: `${declared.width}x${declared.height}pt — ${describeDelta(detection.delta)} than the device box (${device.width}x${device.height}pt)`,
+    detail,
   };
 }
 

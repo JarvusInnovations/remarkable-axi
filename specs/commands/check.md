@@ -113,7 +113,7 @@ worse than having no linter — see
 ## Output
 
 ```
-check: flyer.pdf, 1 page, rasterized at 226dpi (1404x1872)
+check: flyer.html, 1 page, rasterized at 226dpi (1404x1872)
 page_box: 447x596pt — matches RM110 (calibrated)
 findings[2]{pages,severity,check,detail}:
   "1-10",warn,contrast,"#a8a8a8 rules on #fff — 2 levels apart on a 16-level panel"
@@ -123,9 +123,9 @@ images[1]{page,path}:
   1,/tmp/…/check-p1.png
 help[4]:
   Read /tmp/…/check-p1.png to critique the layout by eye — findings measure the panel, not the design
-  Run `remarkable-axi check flyer.pdf --full-res` for native-resolution images
-  Run `remarkable-axi put flyer.pdf <dest>` once the layout reads well
-  Run `remarkable-axi check flyer.pdf --pages 1` after editing to re-check
+  Run `remarkable-axi check flyer.html --full-res` for native-resolution images
+  Run `remarkable-axi put flyer.html <dest>` once the layout reads well
+  Run `remarkable-axi check flyer.html --pages 1` after editing to re-check
 ```
 
 The first and third help lines are the [design-loop](../behaviors/design-loop.md)
