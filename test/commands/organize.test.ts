@@ -85,7 +85,7 @@ describe("rm", () => {
     expect(output.trashed).toEqual({ name: "Draft", path: "/Draft" });
     expect(output.help).toEqual([
       "Restore it from the trash on the device if this was a mistake",
-      "Replacing it? Run `remarkable-axi put <src> /Draft --replace` to do this in one safe motion",
+      'Replacing it? Run `remarkable-axi put <src> "/Draft" --replace` to do this in one safe motion',
     ]);
     expect(deleted).toEqual([{ id: "doc-1", hash: "hash-doc-1" }]);
   });

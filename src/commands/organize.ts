@@ -37,7 +37,7 @@ export async function mkdir(args: string[]): Promise<Output> {
   if (created.length === 0) {
     return {
       folder: `${path} already exists (no-op)`,
-      help: [`Run \`remarkable-axi ls ${path}\` to see its contents`],
+      help: [`Run \`remarkable-axi ls "${path}"\` to see its contents`],
     };
   }
 
@@ -48,7 +48,7 @@ export async function mkdir(args: string[]): Promise<Output> {
   return {
     folder: path,
     created: created.join(", "),
-    help: [`Run \`remarkable-axi put <file> ${path}\` to add a document`],
+    help: [`Run \`remarkable-axi put <file> "${path}"\` to add a document`],
   };
 }
 
@@ -95,14 +95,14 @@ export async function mv(args: string[]): Promise<Output> {
     parent = resolveParentId(tree, to);
   } catch {
     throw new AxiError(`no such folder: ${to}`, "NOT_FOUND", [
-      `Run \`remarkable-axi mkdir ${to}\` to create it first`,
+      `Run \`remarkable-axi mkdir "${to}"\` to create it first`,
     ]);
   }
 
   if ((node.entry.parent ?? "") === parent) {
     return {
       moved: `${from} is already in ${to} (no-op)`,
-      help: [`Run \`remarkable-axi ls ${to}\` to see its contents`],
+      help: [`Run \`remarkable-axi ls "${to}"\` to see its contents`],
     };
   }
 
@@ -114,7 +114,7 @@ export async function mv(args: string[]): Promise<Output> {
 
   return {
     moved: { name: node.entry.visibleName, from, to },
-    help: [`Run \`remarkable-axi ls ${to}\` to confirm`],
+    help: [`Run \`remarkable-axi ls "${to}"\` to confirm`],
   };
 }
 
@@ -144,8 +144,8 @@ export async function rm(args: string[]): Promise<Output> {
         "NOT_EMPTY",
         [
           "Deleting a folder does not delete what is inside it",
-          `Run \`remarkable-axi ls ${path}\` to review the contents`,
-          `Run \`remarkable-axi rm ${path} --force\` to trash the folder anyway`,
+          `Run \`remarkable-axi ls "${path}"\` to review the contents`,
+          `Run \`remarkable-axi rm "${path}" --force\` to trash the folder anyway`,
         ],
       );
     }
@@ -162,7 +162,7 @@ export async function rm(args: string[]): Promise<Output> {
   // intent in the unsafe order".
   if (node.entry.type !== "CollectionType") {
     help.push(
-      `Replacing it? Run \`remarkable-axi put <src> ${path} --replace\` to do this in one safe motion`,
+      `Replacing it? Run \`remarkable-axi put <src> "${path}" --replace\` to do this in one safe motion`,
     );
   }
 
