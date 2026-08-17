@@ -306,6 +306,172 @@ export function catThumbnailCommand(docUuid: string, pageUuid: string): string {
   return `cat "${XOCHITL_DIR}/${docUuid}.thumbnails/${pageUuid}.png"`;
 }
 
+// ---------------------------------------------------------------------------
+// `device reattach` — write commands
+//
+// Both `--map` and `--restore-index` share one discipline: every uuid that
+// reaches a remote command was already validated as a member of the current
+// dump (an orphan candidate, or a page in the current index) before it gets
+// here, and every builder below re-checks with `assertUuidLike` anyway —
+// defense in depth, matching `backupTarCommand`/`catRmCommand` above.
+// ---------------------------------------------------------------------------
+
+/** One `--map <stroke-uuid>=<page-uuid>` pair, already validated against the
+ * current dump by the caller. */
+export interface StrokeMapping {
+  stroke: string;
+  page: string;
+}
+
+/**
+ * Build the `--map` apply command: `cp` each orphaned `.rm` file over its
+ * target page's uuid, inside the document's own directory. Each `cp` is
+ * wrapped to echo its own `OK`/`FAIL` line rather than chaining with `&&` —
+ * one failed copy (a page vanishing mid-ritual, an unreadable source) must
+ * not silently skip the rest, per
+ * specs/principles.md#best-effort-operations-report-per-item-outcomes; the
+ * caller (`parseMapApplyOutput` below) turns those lines back into a
+ * per-stroke disposition.
+ */
+export function buildMapApplyCommand(docUuid: string, pairs: StrokeMapping[]): string {
+  assertUuidLike(docUuid);
+  const lines = [`D=${XOCHITL_DIR}/${docUuid}`];
+  for (const { stroke, page } of pairs) {
+    assertUuidLike(stroke);
+    assertUuidLike(page);
+    lines.push(
+      `if cp "$D/${stroke}.rm" "$D/${page}.rm" 2>/dev/null; then echo "OK ${stroke} ${page}"; else echo "FAIL ${stroke} ${page}"; fi`,
+    );
+  }
+  return lines.join("\n");
+}
+
+/** One row of `device reattach`'s disposition table
+ * (specs/commands/device.md#device-reattach). */
+export interface StrokeDisposition {
+  stroke: string;
+  page: string;
+  disposition: string;
+}
+
+/**
+ * Parse `buildMapApplyCommand`'s `OK`/`FAIL` lines back into a disposition
+ * per pair, in the order `pairs` was given (the command runs its `cp`s
+ * strictly in that order, so the Nth output line answers the Nth pair). A
+ * missing line (the connection dropped mid-stream) reports `failed` rather
+ * than silently omitting the row.
+ */
+export function parseMapApplyOutput(
+  stdout: string,
+  pairs: StrokeMapping[],
+): StrokeDisposition[] {
+  const lines = stdout.split("\n").map((l) => l.trim()).filter(Boolean);
+  return pairs.map((pair, i) => ({
+    stroke: pair.stroke,
+    page: pair.page,
+    disposition: lines[i]?.startsWith("OK ") ? "attached" : "failed",
+  }));
+}
+
+/**
+ * Build the `--restore-index` apply command: write `contentJson` to the
+ * document's `.content`, binary/quote-safe over `execRemote`'s single
+ * command-string transport. `contentJson` is base64-encoded locally first —
+ * the base64 alphabet (`A-Za-z0-9+/=`) contains no shell metacharacter, so
+ * it is safe inside single quotes regardless of what the JSON itself
+ * contains, and decoded back to bytes on-device with `base64 -d` before the
+ * write. **Unverified against real hardware**: BusyBox has shipped a
+ * `base64` applet since well before any current reMarkable firmware, but
+ * this repo has not confirmed the on-device build enables it — see this
+ * plan's Risks. Written to a `.new` sibling and `mv`'d into place rather
+ * than redirected directly onto `.content`, so a decode failure never
+ * leaves the live file half-written.
+ */
+export function buildRestoreIndexCommand(docUuid: string, contentJson: string): string {
+  assertUuidLike(docUuid);
+  const encoded = Buffer.from(contentJson, "utf8").toString("base64");
+  return [
+    `D=${XOCHITL_DIR}`,
+    `printf '%s' '${encoded}' | base64 -d > "$D/${docUuid}.content.new"`,
+    `mv "$D/${docUuid}.content.new" "$D/${docUuid}.content"`,
+  ].join("\n");
+}
+
+/**
+ * Deterministic restore order for `--restore-index`: ascending `.rm` mtime
+ * (oldest first — the order pages were likely drawn in), files with an
+ * unparsed mtime sorted last, uuid as a stable tiebreak. The document's own
+ * *prior* `.content` (which recorded the real order) is exactly what the
+ * clobber overwrote, so it is not available here; recovering it from an
+ * earlier `device backup` archive, when one exists, is a documented
+ * follow-up rather than built in this pass — see plans/device-reattach.md.
+ */
+export function restoreOrder(orphans: DeviceRmFile[]): string[] {
+  return [...orphans]
+    .sort((a, b) => {
+      if (a.mtime !== null && b.mtime !== null && a.mtime !== b.mtime) {
+        return a.mtime - b.mtime;
+      }
+      if ((a.mtime === null) !== (b.mtime === null)) {
+        return a.mtime === null ? 1 : -1;
+      }
+      return a.uuid.localeCompare(b.uuid);
+    })
+    .map((o) => o.uuid);
+}
+
+/** The two-letter base-26 `idx` code (`"aa"`, `"ab"`, … `"az"`, `"ba"`, …)
+ * `cPages.pages` entries carry, per `buildRestoredContent` below. */
+function cPageIdx(index: number): string {
+  const first = Math.floor(index / 26) % 26;
+  const second = index % 26;
+  return String.fromCharCode(97 + first) + String.fromCharCode(97 + second);
+}
+
+/**
+ * Rewrite a document's `.content` pages list to `orderedPageUuids`, for
+ * `--restore-index`. Both page-index shapes real documents use are handled
+ * (see `contentPageOrder`, src/entries.ts): the legacy flat `pages` array is
+ * replaced outright; the newer `cPages.pages` shape needs synthesized
+ * entries (`id` + `idx`) since the orphaned pages have no current entry to
+ * carry forward — `idx` is documented upstream (`rmapi-js`'s own
+ * `CPagePage` type) as `[unknown]`/`[speculative]`, so this pass invents a
+ * value in the same observed two-letter shape rather than leaving the field
+ * absent (the type marks it non-optional). **Unverified against real
+ * hardware.**
+ *
+ * `pageCount` is kept in sync when present. `redirectionPageMap` (a mapping
+ * from page position to the source PDF, keyed to the *old*, now-discarded
+ * page order) is dropped rather than carried stale.
+ */
+export function buildRestoredContent(
+  content: unknown,
+  orderedPageUuids: string[],
+): Record<string, unknown> {
+  const base: Record<string, unknown> =
+    content && typeof content === "object" && !Array.isArray(content)
+      ? { ...(content as Record<string, unknown>) }
+      : {};
+
+  delete base.redirectionPageMap;
+  if (typeof base.pageCount === "number") base.pageCount = orderedPageUuids.length;
+
+  const cPages = base.cPages;
+  if (cPages && typeof cPages === "object" && !Array.isArray(cPages)) {
+    base.cPages = {
+      ...(cPages as Record<string, unknown>),
+      pages: orderedPageUuids.map((id, i) => ({
+        id,
+        idx: { timestamp: "1:1", value: cPageIdx(i) },
+      })),
+    };
+    return base;
+  }
+
+  base.pages = orderedPageUuids;
+  return base;
+}
+
 /** Run `DEVICE_DUMP_COMMAND` and parse it — the one connection every
  * `backup`/`orphans` invocation opens to plan its work. */
 export async function fetchDeviceDump(
