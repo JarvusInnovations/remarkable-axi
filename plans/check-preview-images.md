@@ -31,8 +31,18 @@ density); the design-loop hints
 Rasterization for findings is untouched — rules keep measuring the native-density
 raster. The preview is a downscale applied only at image-write time:
 
-- Downscale the native raster to fit 1568px on the long edge (skip when native is
-  already within it — never upscale).
+- Downscale **in pixel space, on the exact raster the findings measured** — between
+  `rasterizePage` and `encodeGrayscalePng` in the check pipeline. Never a second
+  Ghostscript pass at a lower `-r`: that is a re-render (different antialiasing
+  coverage, different pixel-grid decisions), so the preview could disagree with
+  what was measured. Resampling the measured pixels is arithmetic; rendering is
+  already frozen before it runs.
+- Filter: area-average (box) over the grayscale buffer — the right filter for
+  minification, it integrates ink coverage the same way Ghostscript's `AlphaBits`
+  antialiasing does, and it is a few dozen lines over a `Uint8Array` with no new
+  dependency, consistent with the PGM/own-PNG-encoder stance in `src/lint/`.
+- Fit 1568px on the long edge; skip when native is already within it — never
+  upscale.
 - `--full-res` skips the downscale. Unknown-flag validation gains the flag; `--help`
   documents it via `reference.ts`.
 - The `images:` summary line reports `WxH (preview of native WxH)`, or the native
@@ -62,8 +72,9 @@ doc comment, so a future ceiling change is one edit.
 ## Risks / unknowns
 
 - **Downscale quality** — a naive nearest-neighbor downscale can alias fine line
-  work into invisibility and misrepresent the design. Use a proper resampling
-  filter; eyeball a hairline-heavy fixture at preview scale before shipping.
+  work into invisibility and misrepresent the design; the area-average filter in
+  the approach is the mitigation. Eyeball a hairline-heavy fixture at preview
+  scale before shipping.
 - **Human fidelity at 0.73×** — body text stays legible but pixel-level line work
   softens; that is what `--full-res` is for, and the always-advertised hint is the
   mitigation. If review shows 1568 too lossy in practice, the constant moves — the
