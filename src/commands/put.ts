@@ -1,9 +1,10 @@
-import { extname, basename } from "node:path";
-import { readFile, stat } from "node:fs/promises";
+import { extname, basename, join } from "node:path";
+import { mkdtemp, readFile, rm as removeFile, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { AxiError } from "axi-sdk-js";
 import type { ItemRef, RemarkableApi } from "rmapi-js";
 import type { Output } from "../output.js";
-import { humanSize } from "../output.js";
+import { collapseHome, humanSize } from "../output.js";
 import { client } from "../auth.js";
 import { readConfig } from "../config.js";
 import { panelWidth, widestPanelWidth } from "../devices.js";
@@ -19,8 +20,19 @@ import {
   type Node,
 } from "../paths.js";
 import { articleToEpub, documentName } from "../article.js";
+import { render } from "./render.js";
+import { check } from "./check.js";
 
 const UPLOADABLE = new Set([".pdf", ".epub"]);
+const HTML_EXTENSIONS = new Set([".html", ".htm"]);
+
+/** `check`'s own collapsed-finding shape, reused verbatim rather than re-declared. */
+interface CheckFinding {
+  pages: string;
+  severity: "error" | "warn";
+  check: string;
+  detail: string;
+}
 
 interface Source {
   ext: ".pdf" | ".epub";
@@ -30,6 +42,10 @@ interface Source {
   url?: string;
   /** Panel width image renditions were selected against, for URL sources. */
   imagesFor?: string;
+  /** HTML sources only: render's page-box disposition (injected/matches/honored/overridden). */
+  page?: string;
+  /** HTML sources only: check's findings, in check's own shape — a collapsed array or "clean". */
+  findings?: CheckFinding[] | string;
 }
 
 /** `--keep-old` is retired outright, not redirected — see specs/commands/README.md. */
@@ -71,19 +87,84 @@ function rejectKeepInk(args: string[]): void {
   );
 }
 
+/**
+ * Render an HTML source to a device-boxed PDF and lint it, sharing the exact
+ * `render`/`check` implementations rather than re-deriving any of their
+ * logic — see specs/commands/put.md#html-sources-and-page-geometry. That
+ * reuse is what keeps page-box injection and the mismatch report
+ * byte-identical to `render`'s, and findings in `check`'s own shape.
+ *
+ * `render` is called first, with `--device-page` forwarded when asked for,
+ * and `check` then lints the PDF `render` actually produced — never the
+ * original source, which `check` would re-render on its own and could in
+ * principle disagree with about the page box. `render` and `check` also own
+ * every failure this step can hit (`NOT_FOUND`, `NO_DEVICE`, `MISSING_TOOL`,
+ * `RENDER_FAILED`) for free.
+ *
+ * `--strict` turns an error-severity finding fatal here, before anything is
+ * uploaded; short of that, findings ride along in the upload output as a
+ * warning — never blocking a document the user already decided to ship.
+ */
+async function loadHtml(
+  file: string,
+  ext: string,
+  nameOverride: string,
+  opts: { devicePage: boolean; strict: boolean },
+): Promise<Source> {
+  const dir = await mkdtemp(join(tmpdir(), "remarkable-axi-put-"));
+  try {
+    const tempPdf = join(dir, "rendered.pdf");
+    const renderOutput = await render([
+      file,
+      "--out",
+      tempPdf,
+      ...(opts.devicePage ? ["--device-page"] : []),
+    ]);
+    const page = (renderOutput.rendered as { page: string }).page;
+
+    const checkOutput = await check([tempPdf, "--no-images"]);
+    const findings = checkOutput.findings as CheckFinding[] | string;
+
+    if (opts.strict) {
+      const errors = Array.isArray(findings)
+        ? findings.filter((f) => f.severity === "error")
+        : [];
+      if (errors.length > 0) {
+        throw new AxiError(
+          `${errors.length} error-severity finding${errors.length === 1 ? "" : "s"} on ${collapseHome(file)}; --strict treats these as fatal`,
+          "LINT_FAILED",
+          [
+            ...errors.map((f) => `pages ${f.pages}: ${f.check} — ${f.detail}`),
+            `Run \`remarkable-axi check ${collapseHome(file)}\` for the full report`,
+            "Drop --strict to upload anyway with the findings reported",
+          ],
+        );
+      }
+    }
+
+    const buffer = new Uint8Array(await readFile(tempPdf));
+    const name = documentName(nameOverride || basename(file, ext));
+
+    return { ext: ".pdf", buffer, size: buffer.byteLength, name, page, findings };
+  } finally {
+    // The cloud copy is the deliverable; the rendered PDF's bytes are
+    // already captured above, so nothing later in `put` reads this file
+    // again — safe to clean up immediately rather than leaving it for an
+    // upload that might not even happen (an occupied destination, say).
+    await removeFile(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 /** Load and validate a local file source. */
-async function loadLocal(file: string, nameOverride: string): Promise<Source> {
+async function loadLocal(
+  file: string,
+  nameOverride: string,
+  opts: { devicePage: boolean; strict: boolean },
+): Promise<Source> {
   const ext = extname(file).toLowerCase();
 
-  if (ext === ".html") {
-    throw new AxiError(
-      `cannot upload ${file}: HTML sources are not supported yet`,
-      "UNSUPPORTED_FORMAT",
-      [
-        "HTML upload needs `render`, which is not implemented yet",
-        "The reMarkable cloud accepts .pdf and .epub directly; a URL source converts to EPUB automatically",
-      ],
-    );
+  if (HTML_EXTENSIONS.has(ext)) {
+    return loadHtml(file, ext, nameOverride, opts);
   }
 
   if (!UPLOADABLE.has(ext)) {
@@ -245,7 +326,7 @@ export async function put(args: string[]): Promise<Output> {
 
   const parsed = parseFlags("put", args, {
     value: ["--name"],
-    boolean: ["--replace", "--discard-ink"],
+    boolean: ["--replace", "--discard-ink", "--device-page", "--strict"],
   });
 
   const src = requirePositional(
@@ -263,9 +344,16 @@ export async function put(args: string[]): Promise<Output> {
 
   const nameOverride = str(parsed, "--name", "");
   const isUrl = /^https?:\/\//i.test(src);
+  // --device-page and --strict only mean anything for an HTML source;
+  // loadLocal ignores them for a .pdf/.epub source, same as --discard-ink
+  // is ignored without --replace — an inapplicable flag is a no-op here,
+  // not a refusal.
   const source = isUrl
     ? await loadUrl(src, nameOverride)
-    : await loadLocal(src, nameOverride);
+    : await loadLocal(src, nameOverride, {
+        devicePage: bool(parsed, "--device-page"),
+        strict: bool(parsed, "--strict"),
+      });
 
   const api = await client();
   const tree = buildTree((await listEntries(api)).entries);
@@ -328,8 +416,9 @@ export async function put(args: string[]): Promise<Output> {
         size: humanSize(source.size),
         format: source.ext.slice(1),
       },
+      ...(source.page ? { page: source.page } : {}),
+      ...(source.findings !== undefined ? { findings: source.findings } : {}),
       ...(source.url ? { source: source.url } : {}),
-    ...(source.imagesFor ? { images_for: source.imagesFor } : {}),
       ...(source.imagesFor ? { images_for: source.imagesFor } : {}),
       ...(trash.ok
         ? { backup: { trashed: trash.name, id: old.entry.id.slice(0, 8) } }
@@ -381,6 +470,8 @@ export async function put(args: string[]): Promise<Output> {
       size: humanSize(source.size),
       format: source.ext.slice(1),
     },
+    ...(source.page ? { page: source.page } : {}),
+    ...(source.findings !== undefined ? { findings: source.findings } : {}),
     ...(source.url ? { source: source.url } : {}),
     ...(source.imagesFor ? { images_for: source.imagesFor } : {}),
     ...(created.length > 0 ? { created: created.join(", ") } : {}),

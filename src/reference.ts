@@ -88,10 +88,13 @@ export const COMMAND_GROUPS: CommandGroup[] = [
           "--name <name>    document name shown on the device (default: derived from source)",
           "--replace        swap the contents of the document already at <dest> (uploads first, then trashes the old copy under a dated name — the safe form of rm-then-put)",
           "--discard-ink    with --replace, proceed even though the target carries ink",
+          "--device-page    override an HTML source's declared @page with the device page box",
+          "--strict         treat check-level error findings as fatal instead of warnings",
         ],
         examples: [
           "remarkable-axi put ~/Downloads/paper.pdf /Papers",
           'remarkable-axi put "https://example.com/post" /Articles',
+          "remarkable-axi put flyer.html /Designs",
           "remarkable-axi put draft-v2.pdf /Papers/Draft --replace",
           "remarkable-axi put draft-v2.pdf /Papers/Draft --replace --discard-ink",
         ],
