@@ -1,5 +1,6 @@
 ---
-status: planned
+status: done
+pr: 38
 depends: []
 specs:
   - specs/behaviors/ink-preservation.md
@@ -45,12 +46,12 @@ rides [`device-reattach`](device-reattach.md)).
 
 ## Validation
 
-- [ ] Replace refusal and success both report `last_synced`
-- [ ] Refusal carries the blind-spot line verbatim from the spec
-- [ ] A document whose only `.rm` entries are zero-stroke replaces without
+- [x] Replace refusal and success both report `last_synced`
+- [x] Refusal carries the blind-spot line verbatim from the spec
+- [x] A document whose only `.rm` entries are zero-stroke replaces without
       `--discard-ink` (closes #28)
-- [ ] A genuinely inked page still refuses
-- [ ] The zero-stroke detection method and its measurement are doc-commented
+- [x] A genuinely inked page still refuses
+- [x] The zero-stroke detection method and its measurement are doc-commented
 
 ## Risks / unknowns
 
@@ -60,8 +61,44 @@ rides [`device-reattach`](device-reattach.md)).
 
 ## Notes
 
-(Populated at closeout.)
+Issue #28 turned out to carry only the field report and the author's own
+analysis, not a captured zero-stroke `.rm` file — so "measure real
+zero-stroke `.rm` entries" from the Approach had no real sample to measure.
+Measured against the v6 `.rm` codec's own writer instead (`rmapi-js`'s
+`rm6.js`, invoked directly to build and serialize both a minimal
+opened-but-undrawn scene and the same scene plus a single-point stroke):
+
+| case | bytes |
+| --- | --- |
+| opened, zero strokes (scene tree, layer, page-info, scene-info) | ~176 |
+| same, plus an author-id table | ~209 |
+| + smallest possible real stroke (one-point tap) | +~74 |
+
+That ~74-byte margin is real (it's dictated by the wire format, not device
+behavior) but not provably safe: nothing bounds how large the device's own
+zero-stroke scaffolding gets in practice (extra layers, undo/redo history, a
+larger author table on a multi-device doc), and the Risks section is explicit
+that a wrong threshold silently discards real ink — the worst failure
+available here. So per the plan's own fallback, `detectInk` fetches and
+parses every candidate `.rm` entry instead of trusting size, reusing
+`pageGeometry` (the function `get --overlay` already trusts) to decide.
+Full reasoning is doc-commented on `detectInk` in `src/commands/put.ts`.
+
+Test suite was contended by concurrent sibling-plan test runs on the same
+machine during verification, which produced transient Chrome-render timeouts
+unrelated to this change. Isolated reruns of the affected files at a
+generous timeout confirmed only the two known-environmental `NO_DEVICE`
+failures (issue #34) remain; all `put.test.ts` cases (existing and new) pass
+cleanly.
 
 ## Follow-ups
 
-(Populated at closeout.)
+- None identified. The device-extended gate (closing the blind spot at the
+  gate rather than just disclosing it) is out of scope here by design — it
+  rides [`device-reattach`](device-reattach.md), per the plan's Scope.
+- The `.rm` size measurement is against the codec's writer, not a captured
+  real-device sample. If a genuine zero-stroke `.rm` file is ever captured
+  (e.g. attached to a future issue), it would be worth confirming this
+  analysis empirically — though the fetch-and-parse approach doesn't
+  *require* that confirmation to be correct, only a future size-threshold
+  optimization would.
