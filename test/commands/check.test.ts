@@ -110,7 +110,7 @@ describe.skipIf(gs === null)("check command", () => {
   test("images are written by default, one PNG per page", async () => {
     const pdf = await writePdf("with-images.pdf");
     const output = await check([pdf, "--device", "paper-pro"]);
-    const images = output.image_files as { page: number; path: string }[];
+    const images = output.images as { page: number; path: string }[];
     expect(images).toHaveLength(1);
     const info = await stat(images[0]!.path.replace(/^~/, process.env.HOME ?? ""));
     expect(info.size).toBeGreaterThan(0);
@@ -124,7 +124,7 @@ describe.skipIf(gs === null)("check command", () => {
     await writeFile(path, await doc.save());
 
     const output = await check([path, "--device", "paper-pro", "--pages", "1"]);
-    const images = output.image_files as { page: number; path: string }[];
+    const images = output.images as { page: number; path: string }[];
     expect(images.map((i) => i.page)).toEqual([1]);
 
     // The invariant: restricting images must never narrow the findings.
@@ -152,7 +152,7 @@ describe.skipIf(gs === null)("check command", () => {
     const pdf = await writePdf("custom-out.pdf");
     const outDir = join(dir, "custom-images");
     const output = await check([pdf, "--device", "paper-pro", "--out", outDir]);
-    const images = output.image_files as { page: number; path: string }[];
+    const images = output.images as { page: number; path: string }[];
     expect(images[0]!.path).toContain("custom-images");
   });
 
@@ -166,7 +166,7 @@ describe.skipIf(gs === null)("check command", () => {
       // point-box back through Ghostscript's own rasterization shifts by a
       // pixel.
       const fullRes = await check([pdf, "--device", "paper-pro", "--full-res"]);
-      const nativeImages = fullRes.image_files as { page: number; path: string }[];
+      const nativeImages = fullRes.images as { page: number; path: string }[];
       const native = pngDimensions(
         await readFile(nativeImages[0]!.path.replace(/^~/, process.env.HOME ?? "")),
       );
@@ -175,11 +175,11 @@ describe.skipIf(gs === null)("check command", () => {
       const expected = fitDimensions(native.width, native.height);
 
       const output = await check([pdf, "--device", "paper-pro"]);
-      expect(String(output.images)).toBe(
-        `1 page at ${expected.width}x${expected.height} (preview of native ${native.width}x${native.height})`,
+      expect(String(output.image_scale)).toBe(
+        `${expected.width}x${expected.height} (preview of native ${native.width}x${native.height})`,
       );
 
-      const images = output.image_files as { page: number; path: string }[];
+      const images = output.images as { page: number; path: string }[];
       const dims = pngDimensions(
         await readFile(images[0]!.path.replace(/^~/, process.env.HOME ?? "")),
       );
@@ -190,12 +190,13 @@ describe.skipIf(gs === null)("check command", () => {
       const pdf = await writePdf("full-res.pdf");
       const output = await check([pdf, "--device", "paper-pro", "--full-res"]);
 
-      const images = output.image_files as { page: number; path: string }[];
+      const images = output.images as { page: number; path: string }[];
       const dims = pngDimensions(
         await readFile(images[0]!.path.replace(/^~/, process.env.HOME ?? "")),
       );
-      expect(String(output.images)).toBe(`1 page at ${dims.width}x${dims.height}`);
-      expect(String(output.images)).not.toContain("preview of native");
+      // No downscale happened, so there is no image_scale line — the
+      // header's own `rasterized at …` size is the only size statement.
+      expect(output.image_scale).toBeUndefined();
       const help = (output.help as string[] | undefined) ?? [];
       expect(help.some((h) => h.includes("--full-res"))).toBe(false);
     });
@@ -206,7 +207,7 @@ describe.skipIf(gs === null)("check command", () => {
       const pdf = await writePdf("tiny.pdf", { size: [72, 96] }); // 1in x 1.33in
       const output = await check([pdf, "--device", "paper-pro"]);
 
-      expect(String(output.images)).not.toContain("preview of native");
+      expect(output.image_scale).toBeUndefined();
       const help = (output.help as string[] | undefined) ?? [];
       expect(help.some((h) => h.includes("--full-res"))).toBe(false);
     });
@@ -222,7 +223,7 @@ describe.skipIf(gs === null)("check command", () => {
       const pdf = await writePdf("full-res-no-images.pdf");
       const output = await check([pdf, "--device", "paper-pro", "--full-res", "--no-images"]);
       expect(output.images).toBeUndefined();
-      expect(output.image_files).toBeUndefined();
+      expect(output.image_scale).toBeUndefined();
     });
 
     test("the --full-res help line names the checked file", async () => {

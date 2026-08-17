@@ -91,10 +91,13 @@ doc comment, so a future ceiling change is one edit.
   headed `images[1]{page,path}:` — two lines both keyed `images`. Verified empirically
   (see PR #32's description) that this is not achievable: `check`'s output is a plain
   JS object, TOON's `encode()` renders one line per `Object.keys` entry, and a JS
-  object cannot hold two properties under the same key. The implementation keeps the
-  summary under `images` (matching the spec's line verbatim) and moved the table to a
-  new `image_files` key, same position and order the spec shows. Flagged as a
-  deviation rather than silently resolved — see Follow-ups.
+  object cannot hold two properties under the same key. The implementation first
+  moved the table to a new `image_files` key; at review the resolution was inverted —
+  the table keeps its pre-existing published `images[n]{page,path}` key, and the
+  summary became an `image_scale:` scalar emitted only when a downscale happened
+  (at native scale the header's `rasterized at …` line already states the size, and
+  the page count already lives in the table header). The spec's Output example was
+  corrected in this same PR.
 - **Ghostscript's own rounding means "1620x2160" isn't the literal native raster.**
   `pageBox()` derives paper-pro's PDF page box from its native pixels rounded to whole
   points (1620/229*72 ≈ 509.17pt → 509pt), and Ghostscript then rasterizes that
@@ -115,10 +118,9 @@ doc comment, so a future ceiling change is one edit.
 
 ## Follow-ups
 
-- Consider a small correction to `specs/commands/check.md`'s Output example so it
-  shows the achievable `images:` + `image_files[1]{page,path}:` shape (or otherwise
-  documents the key split) rather than the literal-but-unproducible dual `images`
-  lines — see the Notes entry above and PR #32's description for the full reasoning.
+- None (resolved at review): the spec's unproducible dual-`images` Output example
+  was corrected in this PR to `image_scale:` + `images[n]{page,path}` — see the
+  Notes entry above.
 - The design-loop-disclosure plan (out of scope here) will add more help lines to
   `check`'s output (an eye-pass hint, a `put` hint) around the same `help` array this
   plan appends the `--full-res` escape hatch to — worth a quick look at final line

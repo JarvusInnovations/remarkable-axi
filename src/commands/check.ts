@@ -37,10 +37,13 @@ function fmtBox(box: PageBox): string {
 }
 
 /**
- * Summarize the written page images as one line: a page count and the
- * dimensions actually written, plus the native size whenever those differ
- * — so a preview-scaled image can never be mistaken for the full
- * measurement (specs/commands/check.md#page-images-are-previews-by-default).
+ * The `image_scale:` line — written dimensions plus the native size they
+ * are a preview of, so a preview-scaled image can never be mistaken for
+ * the full measurement
+ * (specs/commands/check.md#page-images-are-previews-by-default). Emitted
+ * only when a downscale actually happened: at native scale the header's
+ * own `rasterized at …` line already states the size, and the page count
+ * lives in the `images` table header rather than being repeated here.
  *
  * Sized off the first written image. Every page shares one device target
  * and dpi, so native and preview dimensions are normally uniform across a
@@ -49,14 +52,9 @@ function fmtBox(box: PageBox): string {
  * mismatch (a document with mixed page sizes) still surfaces as a `page
  * box` finding rather than going unreported here.
  */
-function imagesSummary(sizes: { native: Dimensions; written: Dimensions }[]): string {
+function imageScale(sizes: { native: Dimensions; written: Dimensions }[]): string {
   const first = sizes[0]!;
-  const plural = sizes.length === 1 ? "page" : "pages";
-  const downscaled = first.written.width !== first.native.width || first.written.height !== first.native.height;
-  const size = downscaled
-    ? `${first.written.width}x${first.written.height} (preview of native ${first.native.width}x${first.native.height})`
-    : `${first.native.width}x${first.native.height}`;
-  return `${sizes.length} ${plural} at ${size}`;
+  return `${first.written.width}x${first.written.height} (preview of native ${first.native.width}x${first.native.height})`;
 }
 
 const CHECK_NAME_ORDER: Record<Finding["check"], number> = {
@@ -333,8 +331,8 @@ export async function check(args: string[]): Promise<Output> {
     );
 
     if (!noImages) {
-      output.images = images.length > 0 ? imagesSummary(imageSizes) : "no pages selected for imaging";
-      if (images.length > 0) output.image_files = images;
+      if (anyDownscaled) output.image_scale = imageScale(imageSizes);
+      output.images = images.length > 0 ? images : "no pages selected for imaging";
     }
 
     const help: string[] = [];
