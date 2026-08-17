@@ -1,0 +1,78 @@
+---
+status: planned
+depends: []
+specs:
+  - specs/commands/check.md
+issues: []
+---
+
+# Preview-scaled check images with a full-res escape hatch
+
+## Scope
+
+`check`'s written page images become previews by default — downscaled to fit within
+1568px on the long edge, never upscaled — with `--full-res` restoring native
+resolution, per the new
+[Page images are previews by default](../specs/commands/check.md#page-images-are-previews-by-default)
+section. The output states both the preview and native sizes, and the help lines
+always include the `--full-res` invocation whenever images were preview-scaled.
+
+Out of scope: any change to what the lint rules measure (they stay at native
+density); the design-loop hints
+([`design-loop-disclosure`](design-loop-disclosure.md)).
+
+## Implements
+
+- `specs/commands/check.md` — the preview-scale section, the `--full-res` flag, the
+  `images:` size line, and the mandatory escape-hatch help line
+
+## Approach
+
+Rasterization for findings is untouched — rules keep measuring the native-density
+raster. The preview is a downscale applied only at image-write time:
+
+- Downscale the native raster to fit 1568px on the long edge (skip when native is
+  already within it — never upscale).
+- `--full-res` skips the downscale. Unknown-flag validation gains the flag; `--help`
+  documents it via `reference.ts`.
+- The `images:` summary line reports `WxH (preview of native WxH)`, or the native
+  size alone under `--full-res`.
+- When any written image was downscaled, append the
+  `Run \`remarkable-axi check <file> --full-res\` for native-resolution images`
+  help line. Under `--full-res`, or when nothing was downscaled, omit it.
+
+1568 is a constant with a stated rationale (the agent-vision ingestion ceiling),
+not a measured device property — keep it a named constant with the rationale in a
+doc comment, so a future ceiling change is one edit.
+
+## Validation
+
+- [ ] Default `check` on a Paper Pro target writes images at 1176x1568 and reports
+      `preview of native 1620x2160`
+- [ ] `--full-res` writes native-resolution images and reports the native size only
+- [ ] A document whose native raster is already within 1568px is not upscaled and
+      gets no escape-hatch hint
+- [ ] Findings are byte-identical between a default and a `--full-res` run of the
+      same document
+- [ ] The escape-hatch help line appears exactly when at least one written image was
+      downscaled
+- [ ] `--no-images` with `--full-res` is not an error (full-res simply has nothing
+      to affect)
+
+## Risks / unknowns
+
+- **Downscale quality** — a naive nearest-neighbor downscale can alias fine line
+  work into invisibility and misrepresent the design. Use a proper resampling
+  filter; eyeball a hairline-heavy fixture at preview scale before shipping.
+- **Human fidelity at 0.73×** — body text stays legible but pixel-level line work
+  softens; that is what `--full-res` is for, and the always-advertised hint is the
+  mitigation. If review shows 1568 too lossy in practice, the constant moves — the
+  spec's rationale, not the number, is the contract.
+
+## Notes
+
+(Populated at closeout.)
+
+## Follow-ups
+
+(Populated at closeout.)
