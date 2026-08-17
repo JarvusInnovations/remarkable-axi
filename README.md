@@ -227,6 +227,28 @@ Pair `setup hooks` with `setup device <model>` — the target device's page box
 is what `render` and `check` design against, and it rides along in the same
 block.
 
+### Install the skill — the complementary path
+
+The hook is ambient (every session, live tablet state) but only works in
+agents that support session hooks. An installable
+[Agent Skill](https://agentskills.io) is the second path: no per-session
+cost, loads on demand when the agent recognizes a matching task, and works in
+any agent that supports the skill format.
+
+```sh
+npx skills add JarvusInnovations/remarkable-axi --skill remarkable-axi
+```
+
+It adds what command output alone can't teach: the ink-recovery playbook
+(triage, the hands-off discipline, and the manual SSH procedure for strokes
+orphaned by a replace or a stuck sync — see
+[`skills/remarkable-axi/references/ink-recovery.md`](skills/remarkable-axi/references/ink-recovery.md)),
+the one-time device-SSH walkthrough, and a static command reference generated
+from the same source the CLI's own help uses. Its description triggers on
+symptoms too — "my handwriting is gone", "the tablet shows blank pages" — not
+just on recognizing the tool by name. Use the hook, the skill, or both; they
+cover the same ground from two different loading models.
+
 **What it writes**, idempotently, only for the agents you actually have:
 
 | Agent | File |
@@ -365,6 +387,9 @@ bun run check    # type-check
 bun run test     # unit tests (vitest)
 bun run build    # bundle to dist/bin/remarkable-axi.js
 bun run dev      # run from source
+
+bun run build:skill  # regenerate skills/remarkable-axi/SKILL.md's command reference
+bun run check:skill  # fail if that generated region is stale (the CI drift gate)
 ```
 
 The build bundles with esbuild rather than emitting plain files, so
