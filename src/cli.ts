@@ -1,5 +1,5 @@
 import { AxiError, exitCodeForError, runAxiCli } from "axi-sdk-js";
-import { encode } from "@toon-format/toon";
+import { encodeToon, type Output } from "./output.js";
 import {
   DESCRIPTION,
   renderCommandHelp,
@@ -38,7 +38,20 @@ function renderFailure(
   const output: Record<string, unknown> = { error: message, code };
   if (suggestions.length > 0) output.help = suggestions;
   // Written verbatim by the SDK, so the trailing newline is ours.
-  return `${encode(output)}\n`;
+  return `${encodeToon(output)}\n`;
+}
+
+/**
+ * Wrap a command handler so its output reaches the SDK as an already-
+ * rendered TOON string rather than a plain object. This is the output
+ * boundary: the one place `encodeToon` gets called for command output, so
+ * every command's `help[]` (and any other string-array field) gets block
+ * form without any command hand-assembling TOON itself.
+ */
+function toonOutput(
+  handler: (args: string[]) => Promise<Output>,
+): (args: string[]) => Promise<string> {
+  return async (args) => encodeToon(await handler(args));
 }
 
 export async function main(argv: string[] = process.argv.slice(2)) {
@@ -48,27 +61,27 @@ export async function main(argv: string[] = process.argv.slice(2)) {
     argv,
     topLevelHelp: renderTopLevelHelp(),
     getCommandHelp: renderCommandHelp,
-    home,
+    home: toonOutput(home),
     commands: {
-      put,
-      get,
-      ls,
-      find,
-      devices,
-      page,
-      render,
-      check,
-      mkdir,
-      mv,
-      rm,
-      login,
-      doctor,
-      setup,
+      put: toonOutput(put),
+      get: toonOutput(get),
+      ls: toonOutput(ls),
+      find: toonOutput(find),
+      devices: toonOutput(devices),
+      page: toonOutput(page),
+      render: toonOutput(render),
+      check: toonOutput(check),
+      mkdir: toonOutput(mkdir),
+      mv: toonOutput(mv),
+      rm: toonOutput(rm),
+      login: toonOutput(login),
+      doctor: toonOutput(doctor),
+      setup: toonOutput(setup),
       // Retired verbs — registered so invoking them by name still produces a
       // targeted redirect instead of a generic unknown-command error.
-      send,
-      replace,
-      fetch: fetchCmd,
+      send: toonOutput(send),
+      replace: toonOutput(replace),
+      fetch: toonOutput(fetchCmd),
     },
     formatError: (error) => {
       if (error instanceof AxiError) {
