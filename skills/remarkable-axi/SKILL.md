@@ -95,6 +95,8 @@ recovery procedure — proven end to end in two real incidents.
 ### Device
 
 - `npx -y remarkable-axi device status [--ssh <dest>] [--via <jump>]` — Check tablet reachability, xochitl, storage free, and local document count
+- `npx -y remarkable-axi device backup <path> [--out <tar>] [--force] [--ssh <dest>] [--via <jump>]` — Tar a document's complete on-device file set to a local archive — the first step of every recovery
+- `npx -y remarkable-axi device orphans [<path>] [--render] [--out <dir>] [--ssh <dest>] [--via <jump>]` — List .rm stroke files no page index references — the tablet's own unsynced/clobbered ink
 
 <!-- END GENERATED: command-reference -->
 
