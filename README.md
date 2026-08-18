@@ -236,12 +236,17 @@ cost, loads on demand when the agent recognizes a matching task, and works in
 any agent that supports the skill format.
 
 ```sh
+# in one project
 npx skills add JarvusInnovations/remarkable-axi --skill remarkable-axi
+
+# or once for every project on the machine (non-interactive)
+npx -y skills add JarvusInnovations/remarkable-axi --skill remarkable-axi --global --agent claude-code -y
 ```
 
 It adds what command output alone can't teach: the ink-recovery playbook
-(triage, the hands-off discipline, and the manual SSH procedure for strokes
-orphaned by a replace or a stuck sync — see
+(triage, the hands-off discipline, and the `device backup`/`orphans`/`reattach`
+recovery sequence — with the manual SSH procedure kept as a fallback appendix —
+for strokes orphaned by a replace or a stuck sync — see
 [`skills/remarkable-axi/references/ink-recovery.md`](skills/remarkable-axi/references/ink-recovery.md)),
 the one-time device-SSH walkthrough, and a static command reference generated
 from the same source the CLI's own help uses. Its description triggers on
