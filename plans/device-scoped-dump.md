@@ -1,5 +1,6 @@
 ---
-status: in-progress
+status: done
+pr: 47
 depends: [device-live-hardening]
 specs:
   - specs/commands/device.md
@@ -43,8 +44,8 @@ small connections and the three single-document commands use it.
 - [x] Live: `reattach --map` completed the full ritual over the same relay
       that timed out pre-change — the #45 drill's planted orphan attached,
       per-stroke disposition reported, xochitl restarted
-- [ ] Live: reattached ink confirmed syncing up to the cloud (poll in flight
-      at authoring time; result recorded on issue #45)
+- [x] Live: reattached ink confirmed syncing up to the cloud — `get --as svg`
+      retrieved 185 strokes for the drill document
 
 ## Risks / unknowns
 
@@ -53,8 +54,15 @@ small connections and the three single-document commands use it.
 
 ## Notes
 
-(Closeout pending the sync-verification poll.)
+- Also bounded `doctor`'s account orphan-count probe to 15s in this PR — the
+  full dump over a slow relay made doctor hang for minutes; it now degrades
+  the count to "unknown" honestly.
+- The #45 drill closed the whole recovery loop on real hardware: plant →
+  detect → reattach ritual → ink live on device → synced up → 185 strokes
+  retrieved cloud-side.
 
 ## Follow-ups
 
-(Closeout pending.)
+- Tracked as: issue #34 (updated) — doctor's tests live-probe a reachable
+  tablet through the module-load config leak; flaky-when-reachable until the
+  isolation root cause is fixed.
