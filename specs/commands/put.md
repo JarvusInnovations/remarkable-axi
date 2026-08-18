@@ -92,8 +92,27 @@ dated name. It refuses when the destination is ambiguous rather than picking a v
 and it refuses when the target carries ink unless `--discard-ink` is given. All of
 that is [ink-preservation](../behaviors/ink-preservation.md).
 
+Refusal and success both report the target's `last_synced` age, because the ink
+check sees only the cloud's copy — strokes written on-device since the last sync
+are invisible to it, and stating the age puts that risk where the decision is made.
+See [Cloud checks see only synced ink](../behaviors/ink-preservation.md#cloud-checks-see-only-synced-ink).
+
 A failed upload leaves the original untouched: the new document lands first, and the
 old one is trashed only after the upload is confirmed.
+
+### `rm` then `put` is the same intent in the unsafe order
+
+Agents reach for `rm` followed by a fresh `put` believing it guarantees a clean
+replacement. `--replace` *is* that motion, made safe: the upload is confirmed before
+anything is trashed, the superseded copy is renamed with a date so it stays findable,
+and the ink refusal gets its chance to fire. The rm-first order trashes the original
+before its replacement exists and skips all three protections.
+
+Because the agent planning rm-then-put never hits the occupied-destination refusal
+(the path is empty by the time `put` runs), the teaching has to happen earlier:
+`--replace`'s own flag description states the safe ordering, and `rm`'s success
+output on a document offers `put <src> <path> --replace` as the one-step form for
+replacement intent.
 
 ## HTML sources and page geometry
 
@@ -105,6 +124,24 @@ error-severity findings fatal.
 Warning-not-blocking is deliberate: a hairline that will not resolve on the panel is
 worth knowing about, but not worth refusing a document the user already decided to
 ship.
+
+Output gains two fields for an HTML source, alongside the ordinary `uploaded` block:
+
+```
+uploaded:
+  name: Flyer
+  path: /Designs/Flyer
+  size: 41KB
+  format: pdf
+page: 447x596pt (injected)
+findings: clean — every page checked, nothing to report
+help[1]: Run `remarkable-axi ls /Designs` to confirm it landed
+```
+
+`page` states the same disposition [render](render.md) would — injected, matched,
+honored-with-a-delta, or overridden — so the geometry decision is never silent.
+`findings` is exactly [check](check.md)'s findings shape, collapsed the same way, so
+an agent that has learned one schema has learned both.
 
 ## Success output
 
@@ -132,6 +169,8 @@ Replacing adds the backup — see
 | `--replace` target carries ink, no `--discard-ink` | `HAS_INK` |
 | `--replace` given, nothing at destination | `NOT_FOUND`, suggesting the plain form |
 | HTML source, no device target set | `NO_DEVICE`, naming `setup device` |
+| HTML source, Chrome not found | `MISSING_TOOL`, naming what to install and that `doctor` checks it |
+| `--strict`, an error-severity finding on the rendered PDF | `LINT_FAILED` |
 
 ## Principles
 

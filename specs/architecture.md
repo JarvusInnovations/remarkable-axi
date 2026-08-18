@@ -40,6 +40,25 @@ The relevant shape of that API:
 - Uploads accept **PDF and EPUB only**. Every other input format is converted before
   it reaches the cloud.
 
+## Device access (optional second path)
+
+Beside the cloud there is a second, optional access path: SSH to the tablet itself,
+for the state the cloud cannot see — unsynced ink, orphaned stroke files, the
+on-device page index. It exists because the cloud's picture lags the pen, and two
+real ink-loss incidents landed in that lag.
+
+- The tool shells out to the system `ssh` binary — discovered at run time and
+  reported by `doctor`, like Chrome and Ghostscript. It bundles no SSH client and
+  handles no passwords (key-based auth only).
+- Connectivity is a **destination** (`root@<host>` or an `~/.ssh/config` alias)
+  plus an optional ProxyJump hop, persisted by `setup ssh` in
+  `~/.config/remarkable-axi/` next to the token and device target — direct LAN and
+  relayed access are one configuration differing by one field.
+- No cloud command requires it; commands that use it degrade to honestly stating
+  what they could not see. The full rules are in
+  [device-access](behaviors/device-access.md); the surface is the
+  [device command group](commands/device.md).
+
 ## Command surface has one source
 
 `src/reference.ts` describes the entire command surface — usage, summary, flags,
@@ -48,6 +67,13 @@ the generated SKILL.md region derive from it. Help text exists nowhere else, so
 documentation cannot drift from the surface it documents.
 
 Adding or changing a command means changing `reference.ts` first.
+
+Help output is itself output: the top-level listing and every `--help` block are
+TOON, the same as every other response — `usage:`, `commands[n]:`, `flags:`,
+`examples:` as TOON keys, never a prose manpage, and never a mix of the two in one
+response. String-list values such as `help[]` arrays emit in **block form** (one
+line per entry) rather than inline, so entries never need comma-and-quote escaping
+and stay readable at any length.
 
 ## Local state
 

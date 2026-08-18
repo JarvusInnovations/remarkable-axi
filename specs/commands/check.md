@@ -20,11 +20,38 @@ knows what to look for.
 | `--pages <spec>` | page numbers and ranges to rasterize, e.g. `1,3,7-9` (default: all) |
 | `--device <model>` | check against a model other than the configured target |
 | `--out <dir>` | where the page images are written (default: a temp directory, reported) |
+| `--full-res` | write page images at the device's native resolution instead of preview scale |
 | `--no-images` | findings only |
 
 `--pages` is a sparse spec, not a range: a long document is usually checked at a
 handful of representative pages, and rasterizing the rest is wasted time. Findings are
 still reported for every page — only the images are restricted.
+
+### Page images are previews by default
+
+The written page images are downscaled to fit within **1568px on the long edge**
+(never upscaled). That number is the ceiling of what agent vision ingests — larger
+images are downscaled by the model anyway — so a preview at this scale is lossless
+to the agent by construction, while staying crisp enough for a human in the review
+loop to judge layout and read body text. What it buys is a bounded, predictable cost
+per image on any harness, including ones that pass images through at full size.
+
+Two things do not vary with the preview scale:
+
+- **Findings are always measured at native density.** Rasterization for the lint
+  rules happens at the device's own resolution regardless of what image is written;
+  the scale affects only the artifact handed back.
+- **The native size is always stated** in the output next to the preview size — the
+  `image_scale:` line, emitted exactly when a downscale happened — so a smaller
+  image can never pass for the full measurement. (At native scale the header's own
+  `rasterized at …` line is the size statement, and the line is omitted.)
+
+`--full-res` writes native-resolution images instead, for the cases the preview
+genuinely underserves: a human inspecting line work pixel-for-pixel, or a caller
+running content-level verification (a barcode decode, an OCR pass) on the images.
+Whenever images were written at preview scale, the output's help lines **must**
+include the `--full-res` invocation — the escape hatch is advertised at the moment
+it applies, never left for the reader to discover in `--help`.
 
 ## Input
 
@@ -49,7 +76,7 @@ Each finding carries a page, a severity, and the measurement behind it. Severity
 
 | Check | Detects |
 | --- | --- |
-| page box | page size differs from the device page box — the signed delta, per [page-geometry](../behaviors/page-geometry.md) |
+| page box | page size differs from the device page box — the signed delta, per [page-geometry](../behaviors/page-geometry.md). When the page box is exactly the device box **transposed**, the finding says so — a landscape page reads on the portrait panel by panning or device rotation, which is expected for a landscape design and not a defect, and the finding's wording must make that interpretation available without folklore |
 | hairlines | rules and strokes thinner than one device pixel at the panel's density, which may not render at all |
 | contrast | fills and text too few grey levels apart to separate on a 16-level panel |
 | type size | text below the legible floor at the device's density |
@@ -86,15 +113,24 @@ worse than having no linter — see
 ## Output
 
 ```
-check: flyer.pdf, 1 page, rasterized at 226dpi (1404x1872)
+check: flyer.html, 1 page, rasterized at 226dpi (1404x1872)
 page_box: 447x596pt — matches RM110 (calibrated)
 findings[2]{pages,severity,check,detail}:
   "1-10",warn,contrast,"#a8a8a8 rules on #fff — 2 levels apart on a 16-level panel"
   "1,4-9",warn,hairlines,"0.4pt rule — below 0.7pt resolvable at 226dpi"
+image_scale: 1176x1568 (preview of native 1404x1872)
 images[1]{page,path}:
   1,/tmp/…/check-p1.png
-help[1]: Run `remarkable-axi check flyer.html --pages 1` after editing to re-check
+help[4]:
+  Read /tmp/…/check-p1.png to critique the layout by eye — findings measure the panel, not the design
+  Run `remarkable-axi check flyer.html --full-res` for native-resolution images
+  Run `remarkable-axi put flyer.html <dest>` once the layout reads well
+  Run `remarkable-axi check flyer.html --pages 1` after editing to re-check
 ```
+
+The first and third help lines are the [design-loop](../behaviors/design-loop.md)
+chain; the second is the preview escape hatch required above whenever images were
+written at preview scale.
 
 A document with nothing to report says so explicitly rather than emitting an empty
 findings table.
@@ -119,6 +155,8 @@ finding count reflects distinct problems rather than page count.
 
 - [render](render.md) produces; `check` inspects. They share the `@page` detection
   path and message, so they can never disagree about the page box.
+- [design-loop](../behaviors/design-loop.md) makes `check` the center of the page
+  authoring loop: its output carries the eye-pass and `put` hints of that chain.
 - [put](put.md) runs the same lint on an HTML source and reports findings alongside
   the upload, warning by default and failing under `--strict`.
 - [ink-preservation](../behaviors/ink-preservation.md) reuses this rasterizer to

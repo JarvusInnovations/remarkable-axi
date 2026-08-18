@@ -3,6 +3,7 @@ import { bool, parseFlags, str } from "../flags.js";
 import { readConfig } from "../config.js";
 import { pageBox, pageBoxCaveat, resolveTarget, spec } from "../devices.js";
 import { cssBlock } from "../page.js";
+import { CHECK_ITERATE_HINT } from "../hints.js";
 
 /**
  * Report the target device's page box, and the CSS to author against it.
@@ -37,6 +38,12 @@ export async function page(args: string[]): Promise<Output> {
 
   if (bool(parsed, "--css")) {
     output.css = cssBlock(box);
+    output.help = [CHECK_ITERATE_HINT];
+  } else {
+    output.help = [
+      "Run `remarkable-axi page --css` for a paste-ready `@page` block",
+      CHECK_ITERATE_HINT,
+    ];
   }
 
   return output;

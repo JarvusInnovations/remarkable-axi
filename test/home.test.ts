@@ -183,6 +183,24 @@ describe("home", () => {
     expect(out.status).toContain("paired, 1 documents");
   });
 
+  test("0 documents still gets the page --css design entry hint", async () => {
+    fake = fakeApi({ rootHash: "root-1", generation: 1, refs: [], items: [] }).api;
+    const out = await home();
+
+    expect(out.status).toContain("paired, 0 documents");
+    expect((out.help as string[]).some((h) => h.includes("remarkable-axi page --css"))).toBe(true);
+  });
+
+  test("a populated account also gets the page --css design entry hint", async () => {
+    const items = [document("a", "One", "1700000000000")];
+    const refs = items.map(({ id }) => ({ id, hash: `hash-${id}` }));
+    fake = fakeApi({ rootHash: "root-1", generation: 1, refs, items }).api;
+    const out = await home();
+
+    expect(out.status).toContain("paired, 1 documents");
+    expect((out.help as string[]).some((h) => h.includes("remarkable-axi page --css"))).toBe(true);
+  });
+
   test("cloud unreachable with no cache reports a structured error, not empty output", async () => {
     fake = fakeApi({
       rootHash: "unused",

@@ -20,6 +20,33 @@ describe("pageBoxFinding", () => {
     expect(finding?.detail).toContain("196pt taller");
     expect(finding?.detail).toContain("447x596pt");
   });
+
+  test("a page box exactly the device box transposed reads as a landscape design, not a raw delta", () => {
+    const finding = pageBoxFinding(1, { width: 596, height: 447 }, DEVICE);
+    expect(finding).toMatchObject({ page: 1, severity: "warn", check: "page box" });
+    expect(finding?.detail).toContain("596x447pt");
+    expect(finding?.detail).toContain("landscape");
+    expect(finding?.detail).toContain("transposed");
+    expect(finding?.detail).toContain("panning or device rotation");
+    // Not the raw signed-delta wording.
+    expect(finding?.detail).not.toContain("wider");
+    expect(finding?.detail).not.toContain("taller");
+    expect(finding?.detail).not.toContain("narrower");
+    expect(finding?.detail).not.toContain("shorter");
+  });
+
+  test("a sub-epsilon-transposed box still counts as transposed — same epsilon as the base comparison", () => {
+    const finding = pageBoxFinding(1, { width: 596.2, height: 446.8 }, DEVICE);
+    expect(finding?.detail).toContain("landscape");
+  });
+
+  test("a genuinely mismatched box that happens to differ on both axes still gets the signed delta", () => {
+    // Not the device box transposed (447x596 -> 596x447): both axes are off
+    // from the transposed box too, so this must stay a real mismatch.
+    const finding = pageBoxFinding(1, { width: 612, height: 792 }, DEVICE);
+    expect(finding?.detail).not.toContain("landscape");
+    expect(finding?.detail).not.toContain("transposed");
+  });
 });
 
 describe("noPageDeclarationFinding", () => {

@@ -7,6 +7,7 @@ import { AxiError } from "axi-sdk-js";
 import { check } from "../../src/commands/check.js";
 import { findGhostscript, resetGhostscriptCache } from "../../src/gs.js";
 import { findChrome } from "../../src/chrome.js";
+import { fitDimensions } from "../../src/lint/resample.js";
 
 // Every case below passes --device explicitly — same convention as
 // test/commands/render.test.ts — so this suite never reads a developer's
@@ -20,6 +21,13 @@ interface Finding {
   severity: string;
   check: string;
   detail: string;
+}
+
+/** Read width/height straight out of a PNG's IHDR chunk — same layout
+ * test/lint/png.test.ts asserts `encodeGrayscalePng` produces. */
+function pngDimensions(png: Uint8Array): { width: number; height: number } {
+  const view = new DataView(png.buffer, png.byteOffset + 16, 8);
+  return { width: view.getUint32(0), height: view.getUint32(4) };
 }
 
 describe.skipIf(gs === null)("check command", () => {
@@ -148,6 +156,121 @@ describe.skipIf(gs === null)("check command", () => {
     expect(images[0]!.path).toContain("custom-images");
   });
 
+  describe("preview-scaled images and --full-res", () => {
+    test("default images are downscaled to fit 1568px on the long edge and the summary states both sizes", async () => {
+      const pdf = await writePdf("preview-scale.pdf");
+
+      // Derive the native size from --full-res rather than hard-coding
+      // paper-pro's pixel dimensions here — this stays correct even if the
+      // rounding chain from the device's native pixels through its rounded
+      // point-box back through Ghostscript's own rasterization shifts by a
+      // pixel.
+      const fullRes = await check([pdf, "--device", "paper-pro", "--full-res"]);
+      const nativeImages = fullRes.images as { page: number; path: string }[];
+      const native = pngDimensions(
+        await readFile(nativeImages[0]!.path.replace(/^~/, process.env.HOME ?? "")),
+      );
+      expect(Math.max(native.width, native.height)).toBeGreaterThan(1568); // otherwise this fixture can't exercise a downscale
+
+      const expected = fitDimensions(native.width, native.height);
+
+      const output = await check([pdf, "--device", "paper-pro"]);
+      expect(String(output.image_scale)).toBe(
+        `${expected.width}x${expected.height} (preview of native ${native.width}x${native.height})`,
+      );
+
+      const images = output.images as { page: number; path: string }[];
+      const dims = pngDimensions(
+        await readFile(images[0]!.path.replace(/^~/, process.env.HOME ?? "")),
+      );
+      expect(dims).toEqual(expected);
+    });
+
+    test("--full-res writes native-resolution images and reports the native size alone", async () => {
+      const pdf = await writePdf("full-res.pdf");
+      const output = await check([pdf, "--device", "paper-pro", "--full-res"]);
+
+      const images = output.images as { page: number; path: string }[];
+      const dims = pngDimensions(
+        await readFile(images[0]!.path.replace(/^~/, process.env.HOME ?? "")),
+      );
+      // No downscale happened, so there is no image_scale line — the
+      // header's own `rasterized at …` size is the only size statement.
+      expect(output.image_scale).toBeUndefined();
+      const help = (output.help as string[] | undefined) ?? [];
+      expect(help.some((h) => h.includes("--full-res"))).toBe(false);
+    });
+
+    test("a document already within 1568px is not upscaled and gets no escape-hatch hint", async () => {
+      // At paper-pro's 229dpi, a 1in x 1.33in page rasterizes to well
+      // under the 1568px ceiling on either edge.
+      const pdf = await writePdf("tiny.pdf", { size: [72, 96] }); // 1in x 1.33in
+      const output = await check([pdf, "--device", "paper-pro"]);
+
+      expect(output.image_scale).toBeUndefined();
+      const help = (output.help as string[] | undefined) ?? [];
+      expect(help.some((h) => h.includes("--full-res"))).toBe(false);
+    });
+
+    test("findings are identical between a default and a --full-res run", async () => {
+      const pdf = await writePdf("thin.pdf", { rule: 0.05 });
+      const defaultOutput = await check([pdf, "--device", "paper-pro"]);
+      const fullResOutput = await check([pdf, "--device", "paper-pro", "--full-res"]);
+      expect(fullResOutput.findings).toEqual(defaultOutput.findings);
+    });
+
+    test("--full-res with --no-images is not an error", async () => {
+      const pdf = await writePdf("full-res-no-images.pdf");
+      const output = await check([pdf, "--device", "paper-pro", "--full-res", "--no-images"]);
+      expect(output.images).toBeUndefined();
+      expect(output.image_scale).toBeUndefined();
+    });
+
+    test("the --full-res help line names the checked file", async () => {
+      const pdf = await writePdf("hint.pdf");
+      const output = await check([pdf, "--device", "paper-pro"]);
+      const help = output.help as string[];
+      const hint = help.find((h) => h.includes("--full-res"));
+      expect(hint).toBeDefined();
+      expect(hint).toContain("remarkable-axi check");
+      expect(hint).toContain("hint.pdf");
+      expect(hint).toContain("--full-res");
+    });
+  });
+
+  describe("the design-loop hints", () => {
+    test("images written: the eye-pass hint names the first image, then the put hint carries the checked file", async () => {
+      const pdf = await writePdf("design-loop.pdf");
+      const output = await check([pdf, "--device", "paper-pro"]);
+      const help = output.help as string[];
+      const images = output.images as { page: number; path: string }[];
+
+      const eyePass = help.find((h) => h.startsWith("Read "));
+      expect(eyePass).toBeDefined();
+      expect(eyePass).toContain(images[0]!.path);
+      expect(eyePass).toContain("critique the layout by eye");
+
+      const put = help.find((h) => h.includes("remarkable-axi put"));
+      expect(put).toBeDefined();
+      expect(put).toContain("design-loop.pdf");
+      expect(put).toContain("<dest>");
+      expect(put).toContain("once the layout reads well");
+
+      // Eye-pass leads the chain — it's the first help line.
+      expect(help[0]).toBe(eyePass);
+      expect(help.indexOf(eyePass!)).toBeLessThan(help.indexOf(put!));
+    });
+
+    test("--no-images: neither the eye-pass nor the put hint appears", async () => {
+      const pdf = await writePdf("no-images-hints.pdf");
+      const output = await check([pdf, "--device", "paper-pro", "--no-images"]);
+      const help = (output.help as string[] | undefined) ?? [];
+      expect(help.some((h) => h.startsWith("Read "))).toBe(false);
+      expect(help.some((h) => h.includes("remarkable-axi put"))).toBe(false);
+    });
+
+  });
+
   test("bleed is flagged when the CropBox is smaller than the MediaBox", async () => {
     const doc = await PDFDocument.create();
     const page = doc.addPage([460, 610]);
@@ -269,6 +392,18 @@ describe.skipIf(gs === null)("check command", () => {
       const output = await check([html, "--device", "rm2", "--pages", "1"]);
       expect((output.help as string[]).join(" ")).toContain("--pages 1");
       expect((output.help as string[]).join(" ")).toContain("after editing");
+    });
+
+    test("an HTML source with images gets the eye-pass and put hints too, re-check hint last", async () => {
+      const html = await writeHtml("full-loop.html", "<html><body>x</body></html>");
+      const output = await check([html, "--device", "rm2"]);
+      const help = output.help as string[];
+
+      expect(help[0]).toContain("critique the layout by eye");
+      expect(help.some((h) => h.includes("remarkable-axi put") && h.includes("full-loop.html"))).toBe(true);
+      // The re-check hint (HTML-only) still fires, and lands after the
+      // design-loop pair rather than displacing it.
+      expect(help.at(-1)).toContain("after editing to re-check");
     });
   });
 });

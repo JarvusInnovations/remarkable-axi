@@ -6,11 +6,22 @@ import { client, readToken, tokenPath, writeToken } from "../auth.js";
 import { bool, parseFlags, requirePositional } from "../flags.js";
 import { buildTree, duplicatePaths } from "../paths.js";
 import { discardCache, loadTree } from "../cache.js";
+import { readConfig } from "../config.js";
 import { age } from "../time.js";
 import { setupDevice } from "./devices.js";
+import { accountOrphanCount, setupSsh } from "./device.js";
 import { findChrome } from "../chrome.js";
 import { findGhostscript } from "../gs.js";
-
+import {
+  execRemote,
+  findSsh,
+  formatDocuments,
+  formatStorage,
+  formatXochitl,
+  parseStatusOutput,
+  resolveSshTarget,
+  STATUS_COMMAND,
+} from "../device.js";
 
 const CONNECT_URL = "https://my.remarkable.com/device/desktop/connect";
 
@@ -56,9 +67,49 @@ export async function login(args: string[]): Promise<Output> {
     },
     help: [
       "Run `remarkable-axi` to see your tablet contents",
+      "Run `remarkable-axi setup device <model>` to set the device to design for",
       "Run `remarkable-axi setup hooks` so agents see tablet state automatically",
     ],
   };
+}
+
+/**
+ * `doctor`'s device block: one SSH connection when a destination is
+ * configured, reachability plus the same facts `device status` reports.
+ * Never throws — an unreachable tablet is reported, not a `doctor` failure,
+ * because `device` access is optional (specs/behaviors/device-access.md).
+ */
+async function probeDevice(): Promise<Record<string, unknown> | undefined> {
+  const sshConfig = (await readConfig()).ssh;
+  if (!sshConfig) return undefined;
+
+  const target = resolveSshTarget({}, sshConfig);
+  try {
+    const stdout = await execRemote(target, STATUS_COMMAND);
+    const facts = parseStatusOutput(stdout);
+    // Best-effort, separate from the status probe above: a second read of
+    // the same device, but never lets an orphan-count hiccup take down the
+    // reachability facts that just succeeded — see accountOrphanCount's own
+    // doc comment (src/commands/device.ts).
+    const orphans = await accountOrphanCount(target);
+    return {
+      destination: target.destination,
+      ...(target.via ? { via: target.via } : {}),
+      reachable: "yes",
+      xochitl: formatXochitl(facts),
+      storage: formatStorage(facts),
+      documents: formatDocuments(facts),
+      orphans: orphans !== null ? orphans : "unknown",
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      destination: target.destination,
+      ...(target.via ? { via: target.via } : {}),
+      reachable: "no",
+      error: message,
+    };
+  }
 }
 
 export async function doctor(args: string[]): Promise<Output> {
@@ -81,6 +132,16 @@ export async function doctor(args: string[]): Promise<Output> {
     ? `found (${gsInfo.version})`
     : "not found — required for `check`; install Ghostscript";
 
+  const sshInfo = await findSsh();
+  const ssh = sshInfo
+    ? `found (${sshInfo.version})`
+    : "not found — required for `device` commands; install the OpenSSH client";
+
+  // Same "regardless of pairing state" reasoning as chrome/ghostscript above:
+  // device access is a second, optional path to the tablet, unrelated to
+  // cloud pairing, so its own connectivity is worth reporting either way.
+  const device = await probeDevice();
+
   if (!token) {
     return {
       doctor: {
@@ -88,6 +149,8 @@ export async function doctor(args: string[]): Promise<Output> {
         token: `not found at ${collapseHome(tokenPath)}`,
         chrome,
         ghostscript,
+        ssh,
+        ...(device ? { device } : {}),
       },
       help: [
         `Get an 8-character code from ${CONNECT_URL}`,
@@ -137,6 +200,8 @@ export async function doctor(args: string[]): Promise<Output> {
         ...(result.unreadable > 0 ? { unreadable: result.unreadable } : {}),
         chrome,
         ghostscript,
+        ssh,
+        ...(device ? { device } : {}),
         duplicates: dups.length,
         ...(dups.length > 0
           ? {
@@ -172,6 +237,8 @@ export async function doctor(args: string[]): Promise<Output> {
         error: message,
         chrome,
         ghostscript,
+        ssh,
+        ...(device ? { device } : {}),
       },
       help: [
         "Check network connectivity to the reMarkable cloud",
@@ -185,6 +252,7 @@ export async function setup(args: string[]): Promise<Output> {
   const sub = args[0];
 
   if (sub === "device") return setupDevice(args.slice(1));
+  if (sub === "ssh") return setupSsh(args.slice(1));
 
   if (sub !== "hooks") {
     throw new AxiError(
@@ -193,6 +261,7 @@ export async function setup(args: string[]): Promise<Output> {
       [
         "Run `remarkable-axi setup hooks` to install SessionStart hooks",
         "Run `remarkable-axi setup device <model>` to set the device to design for",
+        "Run `remarkable-axi setup ssh <destination>` to configure device SSH access",
       ],
     );
   }

@@ -22,7 +22,7 @@ const FORMATS = new Set(["original", "pdf", "svg", "text"]);
  * a configured target device — the notes could have been written on a different
  * tablet than the one being designed for.
  */
-function dpiFor(paperSize: [number, number] | null, fallback: number): number {
+export function dpiFor(paperSize: [number, number] | null, fallback: number): number {
   if (!paperSize) return fallback;
   const [w, h] = paperSize;
   if (w === 1620 && h === 2160) return 229; // Paper Pro

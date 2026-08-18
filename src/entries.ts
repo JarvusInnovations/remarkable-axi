@@ -216,12 +216,29 @@ export async function listEntries(api: RemarkableApi): Promise<Listing> {
 }
 
 /**
+ * The document's page uuids, in order — the "page index" both the cloud
+ * `.content` payload and the device's on-disk `.content` file carry, since
+ * xochitl writes the identical schema locally that gets synced up.
+ *
+ * Two shapes exist: a legacy flat `pages` array of ids, and the newer
+ * `cPages.pages` objects. Documents in the wild use both, so both are
+ * checked, legacy first.
+ */
+export function contentPageOrder(content: unknown): string[] {
+  const c = content as Record<string, any> | null | undefined;
+  return Array.isArray(c?.pages)
+    ? (c!.pages as unknown[]).map(String)
+    : Array.isArray(c?.cPages?.pages)
+      ? (c!.cPages.pages as Record<string, any>[]).map((p) => String(p?.id))
+      : [];
+}
+
+/**
  * Resolve which page of the original PDF each annotated page belongs to.
  *
  * `getRmPages` returns only the pages carrying ink, keyed by page id and in no
  * meaningful order, so an index into the original has to come from the
- * document's content metadata. Two shapes exist: a legacy flat `pages` array of
- * ids, and the newer `cPages.pages` objects. Documents in the wild use both.
+ * document's content metadata (`contentPageOrder`, above).
  *
  * `redirectionPageMap` then maps a notebook page position onto the source PDF's
  * page, which matters once pages have been inserted or removed — a negative
@@ -232,11 +249,7 @@ export function pdfPageIndexes(
   pageIds: Iterable<string>,
 ): Map<string, number> {
   const c = content as Record<string, any> | null | undefined;
-  const order: string[] = Array.isArray(c?.pages)
-    ? (c!.pages as unknown[]).map(String)
-    : Array.isArray(c?.cPages?.pages)
-      ? (c!.cPages.pages as Record<string, any>[]).map((p) => String(p?.id))
-      : [];
+  const order = contentPageOrder(content);
 
   const redirect: number[] | undefined = Array.isArray(c?.redirectionPageMap)
     ? (c!.redirectionPageMap as number[])

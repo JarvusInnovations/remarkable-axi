@@ -1,3 +1,5 @@
+import { encodeToon } from "./output.js";
+
 export const DESCRIPTION =
   "Send documents to a reMarkable tablet, design pages for its panel, and pull handwriting back off it";
 
@@ -57,19 +59,22 @@ export const COMMAND_GROUPS: CommandGroup[] = [
         ],
       },
       {
-        usage: "check <file> [--pages <spec>] [--device <model>] [--out <dir>] [--no-images]",
+        usage:
+          "check <file> [--pages <spec>] [--device <model>] [--out <dir>] [--full-res] [--no-images]",
         summary:
           "Rasterize a PDF or HTML document at the device's density and lint it against the panel",
         flags: [
           "--pages <spec>    pages to image, e.g. 1,3,7-9 (default: all); restricts images only, never findings",
           "--device <model>  check against a model other than the configured target",
           "--out <dir>       where page images are written (default: a temp directory, reported)",
+          "--full-res        write page images at the device's native resolution instead of preview scale",
           "--no-images       findings only",
         ],
         examples: [
           "remarkable-axi check flyer.pdf",
           "remarkable-axi check flyer.html --pages 1",
           "remarkable-axi check deck.pdf --no-images",
+          "remarkable-axi check flyer.pdf --full-res",
         ],
       },
     ],
@@ -83,12 +88,15 @@ export const COMMAND_GROUPS: CommandGroup[] = [
           "Send a local PDF/EPUB or a URL to the tablet — source first, destination last",
         flags: [
           "--name <name>    document name shown on the device (default: derived from source)",
-          "--replace        swap the contents of the document already at <dest>",
+          "--replace        swap the contents of the document already at <dest> (uploads first, then trashes the old copy under a dated name — the safe form of rm-then-put)",
           "--discard-ink    with --replace, proceed even though the target carries ink",
+          "--device-page    override an HTML source's declared @page with the device page box",
+          "--strict         treat check-level error findings as fatal instead of warnings",
         ],
         examples: [
           "remarkable-axi put ~/Downloads/paper.pdf /Papers",
           'remarkable-axi put "https://example.com/post" /Articles',
+          "remarkable-axi put flyer.html /Designs",
           "remarkable-axi put draft-v2.pdf /Papers/Draft --replace",
           "remarkable-axi put draft-v2.pdf /Papers/Draft --replace --discard-ink",
         ],
@@ -197,6 +205,83 @@ export const COMMAND_GROUPS: CommandGroup[] = [
           "Install SessionStart hooks so agents see tablet state automatically",
         examples: ["remarkable-axi setup hooks"],
       },
+      {
+        usage: "setup ssh <destination> [--via <jump>]",
+        summary:
+          "Configure direct or relayed SSH access to the tablet, for the device command group",
+        flags: [
+          "--via <jump>  ProxyJump hop, for when this machine isn't on the tablet's own network",
+        ],
+        examples: [
+          "remarkable-axi setup ssh root@192.168.1.37",
+          "remarkable-axi setup ssh root@192.168.1.37 --via mbp-2024",
+        ],
+      },
+    ],
+  },
+  {
+    group: "Device",
+    commands: [
+      {
+        usage: "device status [--ssh <dest>] [--via <jump>]",
+        summary:
+          "Check tablet reachability, xochitl, storage free, and local document count",
+        flags: [
+          "--ssh <dest>  destination for this invocation only, overriding `setup ssh`",
+          "--via <jump>  ProxyJump hop for this invocation only",
+        ],
+        examples: [
+          "remarkable-axi device status",
+          "remarkable-axi device status --ssh root@192.168.1.50",
+        ],
+      },
+      {
+        usage: "device backup <path> [--out <tar>] [--force] [--ssh <dest>] [--via <jump>]",
+        summary:
+          "Tar a document's complete on-device file set to a local archive — the first step of every recovery",
+        flags: [
+          "--out <tar>   where to write (default: ./<name>-device-backup-<date>.tar.gz)",
+          "--force       overwrite an existing archive at the destination",
+          "--ssh <dest>  destination for this invocation only, overriding `setup ssh`",
+          "--via <jump>  ProxyJump hop for this invocation only",
+        ],
+        examples: [
+          'remarkable-axi device backup "/Daily/Today"',
+          'remarkable-axi device backup "/Daily/Today" --out ~/backups/today.tar.gz',
+        ],
+      },
+      {
+        usage:
+          "device orphans [<path>] [--render] [--out <dir>] [--ssh <dest>] [--via <jump>]",
+        summary:
+          "List .rm stroke files no page index references — the tablet's own unsynced/clobbered ink",
+        flags: [
+          "--render      composite each orphan to a preview image alongside its surviving thumbnail",
+          "--out <dir>   where renders/thumbnails land with --render (default: a temp directory, reported)",
+          "--ssh <dest>  destination for this invocation only, overriding `setup ssh`",
+          "--via <jump>  ProxyJump hop for this invocation only",
+        ],
+        examples: [
+          "remarkable-axi device orphans",
+          'remarkable-axi device orphans "/Daily/Today" --render',
+        ],
+      },
+      {
+        usage:
+          "device reattach <path> --map <stroke-uuid>=<page-uuid>[,...] | --restore-index [--ssh <dest>] [--via <jump>]",
+        summary:
+          "Write recovered strokes back into a document's index — backup, stop xochitl, write, sync, restart",
+        flags: [
+          "--map <s>=<p>[,...]  attach named orphaned strokes to named pages of the current index",
+          "--restore-index      restore .content's pages list back to the orphaned page uuids wholesale",
+          "--ssh <dest>         destination for this invocation only, overriding `setup ssh`",
+          "--via <jump>         ProxyJump hop for this invocation only",
+        ],
+        examples: [
+          'remarkable-axi device reattach "/Daily/Today" --map 8c1d44=a91f03',
+          'remarkable-axi device reattach "/Daily/Today" --restore-index',
+        ],
+      },
     ],
   },
 ];
@@ -214,56 +299,56 @@ export function commandDoc(name: string): CommandDoc | undefined {
   return undefined;
 }
 
-/** Render the `--help` block for a single command. */
+/**
+ * Render the `--help` block for a single command as TOON — the same
+ * structured output every other response uses (specs/architecture.md,
+ * "Help output is itself output"), not a prose manpage.
+ */
 export function renderCommandHelp(name: string): string | null {
   const doc = commandDoc(name);
   if (!doc) return null;
 
-  const lines = [`usage: remarkable-axi ${doc.usage}`, "", doc.summary];
-
-  if (doc.flags?.length) {
-    lines.push("", "flags:");
-    for (const flag of doc.flags) lines.push(`  ${flag}`);
-  }
-
-  if (doc.examples?.length) {
-    lines.push("", "examples:");
-    for (const example of doc.examples) lines.push(`  ${example}`);
-  }
+  const output: Record<string, unknown> = {
+    usage: `remarkable-axi ${doc.usage}`,
+    summary: doc.summary,
+  };
+  if (doc.flags?.length) output.flags = doc.flags;
+  if (doc.examples?.length) output.examples = doc.examples;
 
   // The SDK writes this string verbatim, so the trailing newline is ours.
-  return `${lines.join("\n")}\n`;
+  return `${encodeToon(output)}\n`;
 }
 
-/** Render the top-level help listing every command by group. */
+/**
+ * Render the top-level help listing every command by group, as a single
+ * TOON document. `runAxiCli` appends the SDK's own `built-in:` block (the
+ * `update` command) right after this with no separator; keeping every key
+ * here at depth 0 with no trailing blank line means the two writes read as
+ * one coherent document rather than two.
+ */
 export function renderTopLevelHelp(): string {
-  const lines = [
-    `remarkable-axi — ${DESCRIPTION}`,
-    "",
-    "usage: remarkable-axi <command> [args] [flags]",
-  ];
+  const output: Record<string, unknown> = {
+    description: DESCRIPTION,
+    usage: "remarkable-axi <command> [args] [flags]",
+  };
 
   for (const group of COMMAND_GROUPS) {
     // A group can be declared with no commands yet — see the `Design` group
     // above — so it stays out of the printed listing until something lands
-    // in it, rather than showing an empty header or crashing on Math.max().
+    // in it, rather than showing an empty header.
     if (group.commands.length === 0) continue;
 
-    lines.push("", `${group.group}:`);
-    const width = Math.max(
-      ...group.commands.map((c) => c.usage.length),
-    );
-    for (const doc of group.commands) {
-      lines.push(`  ${doc.usage.padEnd(width)}  ${doc.summary}`);
-    }
+    output[group.group] = group.commands.map((doc) => ({
+      usage: doc.usage,
+      summary: doc.summary,
+    }));
   }
 
-  lines.push(
-    "",
+  output.help = [
     "Every cloud call times out after 120s; set REMARKABLE_TIMEOUT=<seconds> to change it (0 waits indefinitely).",
     "Run `remarkable-axi <command> --help` for usage on any command.",
     "Run `remarkable-axi` with no arguments to see current tablet state.",
-  );
+  ];
 
-  return lines.join("\n");
+  return encodeToon(output);
 }
