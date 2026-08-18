@@ -39,10 +39,14 @@ export const DEVICE_DUMP_TIMEOUT_MS = 300_000;
  * `parseDeviceDump` below), so a BusyBox `stat` build without `-c` support
  * would lose two display fields, not the orphan itself.
  */
-export const DEVICE_DUMP_COMMAND = [
+/** The per-document dump loop, parameterized by which `.metadata` files to
+ * walk — `*.metadata` for the account sweep, one literal filename for the
+ * scoped single-document fetch (see `scopedDumpCommand`). */
+function dumpLoop(metadataGlob: string): string {
+  return [
   `D=${XOCHITL_DIR}`,
   `cd "$D" || exit 1`,
-  `for f in *.metadata; do`,
+  `for f in ${metadataGlob}; do`,
   `  [ -f "$f" ] || continue`,
   `  u=$(basename "$f" .metadata)`,
   `  echo "===DOC $u==="`,
@@ -71,7 +75,36 @@ export const DEVICE_DUMP_COMMAND = [
   `    done`,
   `  fi`,
   `done`,
+  ].join("\n");
+}
+
+export const DEVICE_DUMP_COMMAND = dumpLoop("*.metadata");
+
+/** Metadata-only dump — every document's name/parent/type and nothing else
+ * (~300 bytes per document instead of the full listing), which is all path
+ * resolution needs. Found live: the full dump is ~6MB on a 910-document
+ * account and takes minutes over a slow relay, so single-document commands
+ * resolve against this and then fetch one document with `scopedDumpCommand`
+ * instead of paying for the whole account. */
+export const METADATA_DUMP_COMMAND = [
+  `D=${XOCHITL_DIR}`,
+  `cd "$D" || exit 1`,
+  `for f in *.metadata; do`,
+  `  [ -f "$f" ] || continue`,
+  `  u=$(basename "$f" .metadata)`,
+  `  echo "===DOC $u==="`,
+  `  echo "--META--"`,
+  `  cat "$f"`,
+  `  echo`,
+  `done`,
 ].join("\n");
+
+/** Full dump of exactly one document, by uuid (guarded — the uuid comes from
+ * the metadata dump, never from user input). */
+export function scopedDumpCommand(uuid: string): string {
+  assertUuidLike(uuid);
+  return dumpLoop(`${uuid}.metadata`);
+}
 
 export interface DeviceRmFile {
   uuid: string;
@@ -475,8 +508,8 @@ export function buildRestoredContent(
   return base;
 }
 
-/** Run `DEVICE_DUMP_COMMAND` and parse it — the one connection every
- * `backup`/`orphans` invocation opens to plan its work. */
+/** Run `DEVICE_DUMP_COMMAND` and parse it — the account-wide sweep's one
+ * connection. Single-document commands use `fetchDocByPath` instead. */
 export async function fetchDeviceDump(
   target: SshTarget,
   opts: Parameters<typeof execRemote>[2] = {},
@@ -486,4 +519,33 @@ export async function fetchDeviceDump(
     ...opts,
   });
   return parseDeviceDump(stdout);
+}
+
+/**
+ * Resolve a `<path>` to one document and fetch that document's full listing
+ * in two small connections — metadata-only dump to resolve (folders included,
+ * so parent-chain reconstruction works), then a uuid-scoped full dump —
+ * instead of the account-wide `DEVICE_DUMP_COMMAND`. On a large account over
+ * a slow relay that is the difference between seconds and minutes (measured:
+ * ~6MB / 5.5min full dump vs ~300KB of metadata on a 910-document account).
+ * Resolution semantics are identical: same parser, same
+ * `requireOneDeviceMatch`, same `NOT_FOUND`/`AMBIGUOUS`.
+ */
+export async function fetchDocByPath(
+  target: SshTarget,
+  path: string,
+  opts: Parameters<typeof execRemote>[2] = {},
+): Promise<DevicePathMatch> {
+  const metaStdout = await execRemote(target, METADATA_DUMP_COMMAND, {
+    timeoutMs: DEVICE_DUMP_TIMEOUT_MS,
+    ...opts,
+  });
+  const match = requireOneDeviceMatch(parseDeviceDump(metaStdout), path);
+
+  const scopedStdout = await execRemote(target, scopedDumpCommand(match.uuid), {
+    timeoutMs: DEVICE_DUMP_TIMEOUT_MS,
+    ...opts,
+  });
+  const full = parseDeviceDump(scopedStdout).get(match.uuid);
+  return full ? { ...match, doc: full } : match;
 }

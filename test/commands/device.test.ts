@@ -6,7 +6,7 @@ import { AxiError } from "axi-sdk-js";
 import type { SshConfig } from "../../src/config.js";
 import { findGhostscript, resetGhostscriptCache } from "../../src/gs.js";
 import { WITH_STROKE_HEX, ZERO_STROKE_HEX, fromHex } from "../fixtures/rm6.js";
-import { DEVICE_DUMP_COMMAND } from "../../src/device-fs.js";
+import { DEVICE_DUMP_COMMAND, METADATA_DUMP_COMMAND, scopedDumpCommand } from "../../src/device-fs.js";
 import {
   START_XOCHITL_COMMAND,
   STOP_XOCHITL_COMMAND,
@@ -605,6 +605,17 @@ describe("device reattach", () => {
     ]);
   }
 
+  /** The account dump, the metadata-only dump, and any uuid-scoped dump all
+   * answer with the same fixture text — the parser tolerates a superset, and
+   * `fetchDocByPath` just `.get`s the uuid it resolved. */
+  function isAnyDumpCommand(command: string): boolean {
+    return (
+      command === DEVICE_DUMP_COMMAND ||
+      command === METADATA_DUMP_COMMAND ||
+      (command.includes(".metadata; do") && command.includes("===DOC"))
+    );
+  }
+
   /** Generic text-command router: DEVICE_DUMP_COMMAND returns `dump`, the
    * ritual's fixed commands succeed, a map-apply command synthesizes an
    * `OK` line per `cp`, and every call is recorded (in call order,
@@ -612,7 +623,7 @@ describe("device reattach", () => {
   function textRouter(dump: string, opts: { xochitlActive?: string } = {}) {
     return async (_target: unknown, command: string) => {
       events.push(`text:${command}`);
-      if (command === DEVICE_DUMP_COMMAND) return dump;
+      if (isAnyDumpCommand(command)) return dump;
       if (command === XOCHITL_ACTIVE_COMMAND) return opts.xochitlActive ?? "active";
       if (command.includes('cp "$D/')) {
         return command
@@ -690,15 +701,16 @@ describe("device reattach", () => {
 
     const output = await reattach(["/Today", "--map", "stroke-orphan=page-live"]);
 
-    expect(events[0]).toBe(`text:${DEVICE_DUMP_COMMAND}`);
-    expect(events[1]).toContain("binary:");
-    expect(events[1]).toContain("tar czf -");
-    expect(events[2]).toBe(`text:${STOP_XOCHITL_COMMAND}`);
-    expect(events[3]).toContain('cp "$D/stroke-orphan.rm" "$D/page-live.rm"');
-    expect(events[4]).toBe(`text:${SYNC_COMMAND}`);
-    expect(events[5]).toBe(`text:${START_XOCHITL_COMMAND}`);
-    expect(events[6]).toBe(`text:${XOCHITL_ACTIVE_COMMAND}`);
-    expect(events).toHaveLength(7);
+    expect(events[0]).toBe(`text:${METADATA_DUMP_COMMAND}`);
+    expect(events[1]).toContain(".metadata; do");
+    expect(events[2]).toContain("binary:");
+    expect(events[2]).toContain("tar czf -");
+    expect(events[3]).toBe(`text:${STOP_XOCHITL_COMMAND}`);
+    expect(events[4]).toContain('cp "$D/stroke-orphan.rm" "$D/page-live.rm"');
+    expect(events[5]).toBe(`text:${SYNC_COMMAND}`);
+    expect(events[6]).toBe(`text:${START_XOCHITL_COMMAND}`);
+    expect(events[7]).toBe(`text:${XOCHITL_ACTIVE_COMMAND}`);
+    expect(events).toHaveLength(8);
 
     const reattached = output.reattached as Record<string, unknown>;
     expect(reattached.path).toBe("/Today");
@@ -808,7 +820,7 @@ describe("device reattach", () => {
   test("REATTACH_FAILED when apply fails after xochitl is stopped — restart is still attempted", async () => {
     execRemoteImpl = async (_target: unknown, command: string) => {
       events.push(`text:${command}`);
-      if (command === DEVICE_DUMP_COMMAND) return mapFixtureDump();
+      if (isAnyDumpCommand(command)) return mapFixtureDump();
       if (command.includes('cp "$D/')) throw new Error("simulated write failure");
       return "";
     };
@@ -824,7 +836,7 @@ describe("device reattach", () => {
   test("REATTACH_FAILED when xochitl fails to restart, naming the manual recovery step", async () => {
     execRemoteImpl = async (_target: unknown, command: string) => {
       events.push(`text:${command}`);
-      if (command === DEVICE_DUMP_COMMAND) return mapFixtureDump();
+      if (isAnyDumpCommand(command)) return mapFixtureDump();
       if (command === START_XOCHITL_COMMAND) throw new Error("simulated restart failure");
       if (command.includes('cp "$D/')) return "OK stroke-orphan page-live";
       return "";
@@ -844,7 +856,7 @@ describe("device reattach", () => {
   test("a failed `sync` doesn't fail the command — reported as a help note instead", async () => {
     execRemoteImpl = async (_target: unknown, command: string) => {
       events.push(`text:${command}`);
-      if (command === DEVICE_DUMP_COMMAND) return mapFixtureDump();
+      if (isAnyDumpCommand(command)) return mapFixtureDump();
       if (command === SYNC_COMMAND) throw new Error("simulated sync failure");
       if (command.includes('cp "$D/')) return "OK stroke-orphan page-live";
       return "";

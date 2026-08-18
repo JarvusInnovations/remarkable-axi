@@ -26,6 +26,7 @@ import {
   catThumbnailCommand,
   devicePath,
   fetchDeviceDump,
+  fetchDocByPath,
   orphanCandidates,
   parseMapApplyOutput,
   requireOneDeviceMatch,
@@ -250,8 +251,8 @@ export async function backup(args: string[]): Promise<Output> {
   const force = bool(parsed, "--force");
 
   const target = await resolveTargetFromFlags(parsed);
-  const docs = await fetchDeviceDump(target);
-  const match = requireOneDeviceMatch(docs, pathArg);
+  // Scoped resolution — two small connections, never the account-wide dump.
+  const match = await fetchDocByPath(target, pathArg);
 
   if (match.doc.type !== "DocumentType") {
     throw new AxiError(`not a document on the device: ${match.path}`, "USAGE", [
@@ -407,13 +408,14 @@ export async function orphans(args: string[]): Promise<Output> {
   }
 
   const target = await resolveTargetFromFlags(parsed);
-  const docs = await fetchDeviceDump(target);
 
   let scope: { doc: DeviceDoc; path: string }[];
   let scopeLabel: string;
 
   if (pathArg) {
-    const match = requireOneDeviceMatch(docs, pathArg);
+    // Scoped: two small connections instead of the account-wide dump —
+    // see fetchDocByPath.
+    const match = await fetchDocByPath(target, pathArg);
     if (match.doc.type !== "DocumentType") {
       throw new AxiError(`not a document on the device: ${match.path}`, "USAGE", [
         "device orphans sweeps everything when <path> is omitted, or name one document",
@@ -422,6 +424,7 @@ export async function orphans(args: string[]): Promise<Output> {
     scope = [{ doc: match.doc, path: match.path }];
     scopeLabel = match.path;
   } else {
+    const docs = await fetchDeviceDump(target);
     scope = [...docs.values()]
       .filter((doc) => doc.type === "DocumentType")
       .map((doc) => ({ doc, path: devicePath(doc.uuid, docs) ?? `/${doc.visibleName}` }));
@@ -650,8 +653,8 @@ export async function reattach(args: string[]): Promise<Output> {
   const mode: "map" | "restore-index" = mapFlag ? "map" : "restore-index";
 
   const target = await resolveTargetFromFlags(parsed);
-  const docs = await fetchDeviceDump(target);
-  const match = requireOneDeviceMatch(docs, pathArg);
+  // Scoped resolution — two small connections, never the account-wide dump.
+  const match = await fetchDocByPath(target, pathArg);
 
   if (match.doc.type !== "DocumentType") {
     throw new AxiError(`not a document on the device: ${match.path}`, "USAGE", [
