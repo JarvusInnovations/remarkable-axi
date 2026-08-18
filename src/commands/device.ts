@@ -521,7 +521,11 @@ export async function orphans(args: string[]): Promise<Output> {
  */
 export async function accountOrphanCount(target: SshTarget): Promise<number | null> {
   try {
-    const docs = await fetchDeviceDump(target);
+    // Short budget, deliberately: the full dump measures minutes over a slow
+    // relay, and a doctor that hangs for minutes is broken diagnostics. On a
+    // link that slow this degrades to null ("unknown") — the honest answer —
+    // and `device orphans` remains the real sweep with the real budget.
+    const docs = await fetchDeviceDump(target, { timeoutMs: 15_000 });
     let total = 0;
     for (const doc of docs.values()) {
       if (doc.type !== "DocumentType") continue;
