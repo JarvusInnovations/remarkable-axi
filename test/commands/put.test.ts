@@ -58,6 +58,11 @@ function fakeApi(items: Item[]) {
     putPdf: 0,
     rename: 0,
     delete: 0,
+    getRmPages: 0,
+    updateDocument: 0,
+    putRmPages: 0,
+    declaredPages: 0,
+    wroteStrokes: 0,
   };
 
   const docEntries = (item: Item): { id: string; hash: string }[] => {
@@ -141,6 +146,36 @@ function fakeApi(items: Item[]) {
   const api = {
     listRefs: async () => items.map((i) => ({ id: i.id, hash: `hash-${i.id}` })),
     raw,
+    getRmPages: async ({ id }: { id: string }) => {
+      calls.getRmPages++;
+      const item = byId.get(id);
+      const out = new Map<string, unknown>();
+      for (let p = 0; p < (item?.inkedPages ?? 0); p++) {
+        out.set(`page-${p}`, { version: 6, blocks: [{ type: "sceneLineItem" }] });
+      }
+      return out;
+    },
+    getContent: async ({ id }: { id: string }) => {
+      const item = byId.get(id);
+      return {
+        fileType: "pdf",
+        pageCount: item?.pageCount ?? 1,
+        pages: Array.from({ length: item?.pageCount ?? 1 }, (_, i) => `page-${i}`),
+      } as unknown;
+    },
+    getPdf: async () => {
+      throw new Error("no pdf");
+    },
+    updateDocument: async (ref: { id: string; hash: string }, content: unknown) => {
+      calls.updateDocument++;
+      calls.declaredPages = (content as { pages?: string[] }).pages?.length ?? 0;
+      return { id: ref.id, hash: `content-${ref.id}` };
+    },
+    putRmPages: async (ref: { id: string; hash: string }, pages: Map<string, unknown>) => {
+      calls.putRmPages++;
+      calls.wroteStrokes = pages.size;
+      return { id: ref.id, hash: `ink-${ref.id}` };
+    },
     putPdf: async (name: string) => {
       calls.putPdf++;
       const id = `new-${name}`;
@@ -193,6 +228,7 @@ describe("put --replace ink guard", () => {
         "/Flyer has ink on 3 of 12 pages; --replace would discard it\n" +
         `last synced ${lastSyncedAge} — ink written on-device since then is invisible to this check`,
       suggestions: [
+        `carry it onto the replacement — remarkable-axi put ${pdfPath} /Flyer --replace --keep-ink`,
         `save it separately first — remarkable-axi get /Flyer --overlay <file>.pdf`,
         `or replace and let it go — remarkable-axi put ${pdfPath} /Flyer --replace --discard-ink`,
       ],
@@ -204,7 +240,107 @@ describe("put --replace ink guard", () => {
     expect(calls.delete).toBe(0);
   });
 
-  test("the refusal never mentions --keep-ink — it is not a shipped flag", async () => {
+  describe("--keep-ink", () => {
+    // A real PDF, because the carry reads its page boxes to decide what can
+    // ride — the fake "%PDF-1.4" bytes every other test uses cannot answer that.
+    async function realPdf(pages: number): Promise<string> {
+      const { PDFDocument } = await import("pdf-lib");
+      const doc = await PDFDocument.create();
+      for (let i = 0; i < pages; i++) doc.addPage([509, 679]);
+      const file = join(dir, `real-${pages}.pdf`);
+      await writeFile(file, await doc.save());
+      return file;
+    }
+
+    test("carries strokes onto the replacement, then trashes the old copy", async () => {
+      const src = await realPdf(2);
+      const { api, calls } = fakeApi([
+        { id: "docA", name: "Flyer", parent: "", pageCount: 2, inkedPages: 2 },
+      ]);
+      authMock.client.mockResolvedValue(api);
+
+      const out = (await put([src, "/Flyer", "--replace", "--keep-ink"])) as {
+        kept_ink: { ported: number; pages: string };
+        backup?: unknown;
+      };
+
+      expect(out.kept_ink).toEqual({ ported: 2, pages: "1,2" });
+      // The replacement's real page list had to be declared before strokes
+      // could be addressed at all — a fresh upload declares only one page.
+      expect(calls.declaredPages).toBe(2);
+      expect(calls.wroteStrokes).toBe(2);
+      // Strokes were read before the upload, and the old copy trashed after.
+      expect(calls.getRmPages).toBe(1);
+      expect(calls.delete).toBe(1);
+      expect(out.backup).toBeDefined();
+    });
+
+    test("appending a page keeps the earlier pages' ink", async () => {
+      const src = await realPdf(3);
+      const { api, calls } = fakeApi([
+        { id: "docA", name: "Flyer", parent: "", pageCount: 2, inkedPages: 2 },
+      ]);
+      authMock.client.mockResolvedValue(api);
+
+      const out = (await put([src, "/Flyer", "--replace", "--keep-ink"])) as {
+        kept_ink: { ported: number };
+      };
+      expect(out.kept_ink.ported).toBe(2);
+      expect(calls.declaredPages).toBe(3);
+      expect(calls.delete).toBe(1);
+    });
+
+    // The safety rule: a partial carry must not be the moment ink becomes
+    // hard to find, so the superseded document stays out of the trash.
+    test("holds the superseded copy back when ink cannot all ride", async () => {
+      const src = await realPdf(1);
+      const { api, calls } = fakeApi([
+        { id: "docA", name: "Flyer", parent: "", pageCount: 3, inkedPages: 3 },
+      ]);
+      authMock.client.mockResolvedValue(api);
+
+      const out = (await put([src, "/Flyer", "--replace", "--keep-ink"])) as {
+        kept_ink: { ported: number; orphaned: string[] };
+        warning: string;
+        superseded: { id: string };
+      };
+
+      expect(out.kept_ink.ported).toBe(1);
+      expect(out.kept_ink.orphaned).toHaveLength(2);
+      expect(out.warning).toContain("LEFT IN PLACE");
+      expect(out.superseded.id).toBe("docA");
+      expect(calls.delete).toBe(0);
+      expect(calls.rename).toBe(0);
+    });
+
+    test("refuses --keep-ink together with --discard-ink", async () => {
+      const { api } = fakeApi([
+        { id: "docA", name: "Flyer", parent: "", pageCount: 1, inkedPages: 1 },
+      ]);
+      authMock.client.mockResolvedValue(api);
+      await expect(
+        put([pdfPath, "/Flyer", "--replace", "--keep-ink", "--discard-ink"]),
+      ).rejects.toMatchObject({ code: "USAGE" });
+    });
+
+    test("an unreadable replacement carries nothing and keeps the old copy", async () => {
+      const { api, calls } = fakeApi([
+        { id: "docA", name: "Flyer", parent: "", pageCount: 1, inkedPages: 1 },
+      ]);
+      authMock.client.mockResolvedValue(api);
+
+      const out = (await put([pdfPath, "/Flyer", "--replace", "--keep-ink"])) as {
+        kept_ink: { ported: number };
+        warning: string;
+      };
+      expect(out.kept_ink.ported).toBe(0);
+      expect(calls.putRmPages).toBe(0);
+      expect(calls.delete).toBe(0);
+      expect(out.warning).toContain("LEFT IN PLACE");
+    });
+  });
+
+  test("the refusal leads with --keep-ink — the route that loses nothing", async () => {
     const { api } = fakeApi([
       { id: "docA", name: "Flyer", parent: "", pageCount: 12, inkedPages: 3 },
     ]);
@@ -215,8 +351,9 @@ describe("put --replace ink guard", () => {
       throw new Error("should have thrown");
     } catch (error) {
       const axi = error as { message: string; suggestions: string[] };
-      expect(axi.message).not.toContain("--keep-ink");
-      expect(axi.suggestions.join(" ")).not.toContain("--keep-ink");
+      // Ordered deliberately: carrying the ink forward is offered before
+      // either route that costs the user something.
+      expect(axi.suggestions[0]).toContain("--keep-ink");
     }
   });
 

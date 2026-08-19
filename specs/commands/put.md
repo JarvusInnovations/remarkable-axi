@@ -15,6 +15,7 @@ Send something to the tablet. `<src>` is a local file or a URL; `<dest>` is a pa
 | `--name <name>` | document name shown on the device (default: derived from source) |
 | `--replace` | swap the contents of the document already at `<dest>` |
 | `--discard-ink` | with `--replace`, proceed when the target carries ink |
+| `--keep-ink` | with `--replace`, carry the target's strokes onto the replacement |
 
 `--keep-ink` — carrying the superseded document's ink onto the replacement — is
 designed but **not implemented**; see
@@ -89,7 +90,7 @@ user was already being explicit about.
 
 `--replace` uploads the new document, then moves the superseded one to trash under a
 dated name. It refuses when the destination is ambiguous rather than picking a victim,
-and it refuses when the target carries ink unless `--discard-ink` is given. All of
+and it refuses when the target carries ink unless `--discard-ink` or `--keep-ink` is given. All of
 that is [ink-preservation](../behaviors/ink-preservation.md).
 
 Refusal and success both report the target's `last_synced` age, because the ink
@@ -166,7 +167,8 @@ Replacing adds the backup — see
 | source format not convertible | `UNSUPPORTED_FORMAT` |
 | destination occupied, no `--replace` | `EXISTS` |
 | destination resolves to several documents | `AMBIGUOUS` |
-| `--replace` target carries ink, no `--discard-ink` | `HAS_INK` |
+| `--replace` target carries ink, neither ink flag | `HAS_INK` |
+| both `--keep-ink` and `--discard-ink` | `USAGE` |
 | `--replace` given, nothing at destination | `NOT_FOUND`, suggesting the plain form |
 | HTML source, no device target set | `NO_DEVICE`, naming `setup device` |
 | HTML source, Chrome not found | `MISSING_TOOL`, naming what to install and that `doctor` checks it |

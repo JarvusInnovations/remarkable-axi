@@ -119,7 +119,13 @@ pre-existing gap this plan didn't attempt to close.
 
 ## Follow-ups
 
-- Issue [#21](https://github.com/JarvusInnovations/remarkable-axi/issues/21) — `--keep-ink`'s
-  write path needs a live-device test (does the tablet honor a client-manufactured
-  per-page id list, or repaginate and orphan the ported ink on first open?) before it
-  can ship.
+- **Deferred to [`keep-ink`](keep-ink.md)** — that plan builds the flag this one
+  designed and pulled. It reuses this plan's write-path analysis wholesale (the
+  manufacture-the-page-list route, correctly identified here), adds an
+  end-to-end run of it against the live cloud, and carries this plan's
+  unchecked keep-ink validation boxes forward rather than restating them.
+- Issue [#21](https://github.com/JarvusInnovations/remarkable-axi/issues/21) — the
+  live-device question this plan gated on (does the tablet honor a
+  client-manufactured per-page id list, or repaginate and orphan the ported
+  ink on first open?) is **still open**, and is the one unchecked box in
+  [`keep-ink`](keep-ink.md).

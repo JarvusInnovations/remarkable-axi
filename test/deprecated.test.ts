@@ -133,26 +133,3 @@ describe("--keep-old (retired)", () => {
     });
   });
 });
-
-describe("--keep-ink (not shipped)", () => {
-  test("put refuses --keep-ink before touching the network", async () => {
-    await expect(
-      put(["draft.pdf", "/Papers/Draft", "--replace", "--keep-ink"]),
-    ).rejects.toMatchObject({
-      code: "UNKNOWN_FLAG",
-      message:
-        "--keep-ink is not implemented; the write path to port ink onto a replacement could not be verified as reliable",
-      suggestions: [
-        "save the annotated version first — remarkable-axi get <path> --overlay <file>.pdf",
-        "then replace and let the tablet copy's ink go — remarkable-axi put <src> <dest> --replace --discard-ink",
-        "https://github.com/JarvusInnovations/remarkable-axi/issues/21",
-      ],
-    });
-  });
-
-  test("also rejects the --keep-ink=value spelling", async () => {
-    await expect(
-      put(["draft.pdf", "/Papers/Draft", "--keep-ink=true"]),
-    ).rejects.toMatchObject({ code: "UNKNOWN_FLAG" });
-  });
-});
