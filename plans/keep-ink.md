@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: done
 depends: [ink-preservation, device-reattach]
 specs:
   - specs/behaviors/ink-preservation.md
@@ -78,9 +78,9 @@ boxes stayed unchecked when the flag was pulled:
 - [x] `--keep-ink` with `--discard-ink` is a `USAGE` error
 - [x] A replacement whose page count cannot be read carries nothing rather
       than guessing an index mapping
-- [ ] **Hardware drill**: replace an inked multi-page document on a real
+- [x] **Hardware drill**: replace an inked multi-page document on a real
       tablet, open it, and confirm the ported strokes sit on the pages they
-      were written to — the predecessor's open question, unchanged.
+      were written to — the predecessor's open question, **now answered**.
 
 ## Risks / unknowns
 
@@ -100,8 +100,37 @@ boxes stayed unchecked when the flag was pulled:
 
 ## Notes
 
-*Populated at closeout.*
+**The device honors a client-supplied page list.** Verified 2026-08-19 on a
+reMarkable Paper Pro: a 3-page document carrying live strokes on pages 1 and 3
+was replaced by a 4-page one built from the superseded document's *original*
+PDF plus an appended page. Both inked pages ported at similarity 1.00, the new
+page arrived clean, and on the device all four pages rendered with the ink
+exactly where it was written. This retires the question
+[`ink-preservation`](ink-preservation.md) gated on, and issue #21 with it.
+
+**Take the original, not a freshly-baked copy.** Building the replacement from
+`get --overlay` output would flatten the live strokes into the page image *and*
+then port them as strokes — the same ink twice, one copy uneditable. The
+replacement is assembled from `get --as original`, which carries everything
+previously flattened while leaving the live strokes to `--keep-ink`. Any caller
+appending to a document it also annotates needs this ordering.
+
+**The measured similarity of 1.00 is a real signal, not a rounding artifact**:
+the ported pages came from the superseded document's own PDF, so they are
+byte-identical renders. A first live run that scored anything lower would have
+meant the base was wrong.
+
+**CI has no Ghostscript**, which surfaced a better design than the red build
+demanded. Skipping raster suites where `gs` is absent is the repo's existing
+pattern, but skipping alone would leave the metric unverified on every machine
+without a renderer. Extracting `compareDarkness` as a pure function fixed the
+build *and* let the property the weighting exists for be pinned directly: two
+mostly-white pages with content in different places must not score like a
+match (a per-pixel mean gives ~0.97 there; ink-weighted it collapses below
+0.1).
 
 ## Follow-ups
 
-*Populated at closeout.*
+- **None.** Issue #21 is closed by this plan; `specs/behaviors/ink-preservation.md`
+  no longer carries an unshipped section, and the hardware question it was
+  waiting on is answered in Notes above.

@@ -122,12 +122,15 @@ is orphaned or skipped, the old document is left in place — not trashed — an
 the output says so. A partial carry must never be the moment ink becomes hard
 to find.
 
-**Open on hardware**: whether the device honors a client-supplied page list on
-first open, or regenerates its own. If it regenerates, ported strokes land as
-orphans in the document's directory rather than being lost, and
-`device orphans` / `device reattach` recover them — the failure mode is
-recoverable, which is why this ships ahead of that answer rather than behind
-it.
+**The device honors a client-supplied page list** — measured 2026-08-19 on a
+Paper Pro rather than assumed: an inked 3-page document replaced by a 4-page
+one rendered all four pages on the tablet with every stroke where it was
+written.
+
+**Assemble the replacement from the superseded document's `--as original`
+bytes, never from a freshly baked `--overlay` copy.** Baking flattens live
+strokes into the page image, which `--keep-ink` then ports *again* as strokes —
+the same ink twice, one copy uneditable.
 
 `--keep-ink` would port the superseded document's strokes onto the new one. Ink is
 stored per page and positioned in page-relative coordinates, so where the page box is
