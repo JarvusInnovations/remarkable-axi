@@ -9,8 +9,7 @@ what happened to it page by page.
 ## Applies To
 
 `put --replace`, `put --discard-ink`, and any future operation that swaps a
-document's contents. `put --keep-ink` is designed here but **not implemented** —
-see [Carrying ink forward: not yet shipped](#carrying-ink-forward-not-yet-shipped).
+document's contents. `put --keep-ink` — see [Carrying ink forward](#carrying-ink-forward).
 
 ## Details
 
@@ -88,38 +87,50 @@ surviving thumbnails, reattaching them to a live index — is the
 caller's: replace during windows the user has not been writing in, which is the one
 time the blind spot is provably empty.
 
-`--keep-ink` — a third route that carries the ink onto the new version instead of
-choosing between the two above — is the design this section describes next, but it
-is not implemented; see
-[Carrying ink forward: not yet shipped](#carrying-ink-forward-not-yet-shipped) for
-why the refusal above offers only two routes today.
+`--keep-ink` is the third route, and the one the refusal names first: it carries
+the ink onto the new version instead of choosing between the two above. See
+[Carrying ink forward](#carrying-ink-forward).
 
-### Carrying ink forward: not yet shipped
+### Carrying ink forward
 
-**Status: designed, not implemented.** This section describes the intended design
-for the record and for whoever picks it up next — `--keep-ink` does not exist in
-`put`'s flags, and the refusal above does not offer it. See
-[issue #21](https://github.com/JarvusInnovations/remarkable-axi/issues/21) for the
-investigation and the tracking reference.
+`put --replace --keep-ink` ports the superseded document's strokes onto the
+replacement, so a document can be regenerated without its handwriting becoming
+a flattened image or a trashed copy. It is the third route out of the refusal
+above, and the one to reach for when the replacement is a re-render of the same
+document — the common case.
 
-Why: porting ink onto a replacement means assembling a document from a **new**
-upload's pages plus the **old** document's per-page `.rm` files. The obvious tool,
-`rmapi-js`'s `putDocumentArchive`, is both marked experimental *and* documented to
-assign the reuploaded document a **fresh id** — it does not round-trip a document in
-place, and the library's own README records trouble reuploading a cloned document at
-all. A second path was investigated — upload the new PDF, then use the high-level API
-to declare the real per-page id list a multi-page PDF needs (the initial upload
-declares only one, faked, page) before attaching `.rm` files to those ids — but
-whether the device honors a client-supplied page list rather than regenerating its
-own on first open is undocumented and could not be verified without a live-device
-test, which was out of scope for the investigation that produced this note. Shipping
-either path without that verification would be exactly the guessed constant
-[Measure the device; never ship a guessed constant](../principles.md#measure-the-device-never-ship-a-guessed-constant)
-warns against: a plausible mechanism that looks authoritative and silently
-misplaces someone's handwriting.
+**Why this needed a measurement first.** A freshly uploaded multi-page PDF
+declares **one faked page** in its `.content`: a 3-page upload reports
+`pageCount: 1` with a single page id, because the device generates the real
+page list when it first opens the document. Strokes are addressed by page id,
+so until a real list exists there is nothing to write onto. The write path is
+therefore three steps, in this order:
 
-The design below is preserved so a future attempt — ideally one with live-device
-access to verify the page-list question — does not have to re-derive it.
+1. read the superseded document's strokes (`getRmPages`) — **before** anything
+   is uploaded, so a failure here costs nothing;
+2. upload the replacement, then declare its real page list with
+   `updateDocument` (`pages`, `pageCount`, `redirectionPageMap`);
+3. write the strokes against that list with `putRmPages`.
+
+All three were verified end to end against the live cloud — declare a page
+list on a fresh upload, write real strokes onto its third page, read them back
+— before this shipped. That round-trip is what the earlier "the write path
+could not be verified as reliable" note was missing.
+
+**The superseded copy is trashed only on a complete carry.** If any inked page
+is orphaned or skipped, the old document is left in place — not trashed — and
+the output says so. A partial carry must never be the moment ink becomes hard
+to find.
+
+**The device honors a client-supplied page list** — measured 2026-08-19 on a
+Paper Pro rather than assumed: an inked 3-page document replaced by a 4-page
+one rendered all four pages on the tablet with every stroke where it was
+written.
+
+**Assemble the replacement from the superseded document's `--as original`
+bytes, never from a freshly baked `--overlay` copy.** Baking flattens live
+strokes into the page image, which `--keep-ink` then ports *again* as strokes —
+the same ink twice, one copy uneditable.
 
 `--keep-ink` would port the superseded document's strokes onto the new one. Ink is
 stored per page and positioned in page-relative coordinates, so where the page box is
