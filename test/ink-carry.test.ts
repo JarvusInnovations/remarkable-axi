@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { findGhostscript } from "../src/gs.js";
 import {
   SIMILARITY_WARN,
   carryTable,
@@ -6,6 +7,7 @@ import {
   planCarry,
   summarizeCarry,
   withSimilarity,
+  compareDarkness,
   type PageBox,
 } from "../src/ink-carry.js";
 
@@ -75,7 +77,11 @@ describe("summarizeCarry", () => {
   });
 });
 
-describe("measureSimilarity", () => {
+// Raster-dependent, so it skips where Ghostscript is absent — the same
+// pattern test/lint/rules.test.ts uses for check's own raster rules.
+const gs = await findGhostscript();
+
+describe.skipIf(gs === null)("measureSimilarity", () => {
   // Real PDFs with real drawn content: the point of the measurement is that
   // it compares rendered pixels, so a synthetic stand-in would test nothing.
   async function pdf(pages: { text: string }[]): Promise<Uint8Array> {
@@ -124,5 +130,36 @@ describe("carryTable", () => {
   it("flags a shifted page in words, not just a number", () => {
     const plan = withSimilarity(planCarry([0], 1), new Map([[0, 0.61]]));
     expect(carryTable(plan)[0]!.note).toContain("no longer sit on what it annotated");
+  });
+});
+
+// The metric itself, exercised without Ghostscript so CI covers it wherever
+// it runs — the raster plumbing above is what needs a real renderer.
+describe("compareDarkness", () => {
+  const page = (dark: number[]) => Uint8Array.from(dark.map((d) => 255 - d));
+
+  it("scores identical rasters 1", () => {
+    expect(compareDarkness(page([0, 200, 40]), page([0, 200, 40]))).toBe(1);
+  });
+
+  it("scores ink-vs-blank 0", () => {
+    expect(compareDarkness(page([255, 255]), page([0, 0]))).toBe(0);
+  });
+
+  // The reason for the weighting: a mostly-white page pair with *different*
+  // content would score ~0.97 on a plain per-pixel mean, which is
+  // indistinguishable from a match. Ink-weighted, it collapses.
+  it("is not fooled by a shared white background", () => {
+    const mostlyWhite = (inkAt: number) =>
+      page(Array.from({ length: 400 }, (_, i) => (i === inkAt ? 255 : 0)));
+    expect(compareDarkness(mostlyWhite(5), mostlyWhite(300))).toBeLessThan(0.1);
+  });
+
+  it("treats two blank pages as agreeing — nothing to disagree about", () => {
+    expect(compareDarkness(page([0, 0, 0]), page([0, 0, 0]))).toBe(1);
+  });
+
+  it("refuses to compare mismatched sizes", () => {
+    expect(compareDarkness(page([0, 0]), page([0, 0, 0]))).toBe(0);
   });
 });

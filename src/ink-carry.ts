@@ -135,6 +135,34 @@ export function planCarry(
 
 
 /**
+ * Darkness-weighted agreement between two equally-sized grayscale rasters,
+ * 0 (nothing in common) .. 1 (identical).
+ *
+ * Weighting by ink rather than averaging per pixel is the whole point: these
+ * are document pages, overwhelmingly white, and a plain per-pixel mean scores
+ * ~0.97 whether the content matches or not because the shared background
+ * dominates the average. Dividing the disagreement by the *combined darkness*
+ * instead makes the score answer "how much of the ink on these two pages is
+ * in the same place", which is the question being asked.
+ *
+ * Pure, so the metric is exercised everywhere — including where Ghostscript
+ * is absent and `measureSimilarity` cannot run at all.
+ */
+export function compareDarkness(a: Uint8Array, b: Uint8Array): number {
+  if (a.length !== b.length || a.length === 0) return 0;
+  let diff = 0;
+  let mass = 0;
+  for (let i = 0; i < a.length; i++) {
+    const da = 255 - a[i]!;
+    const db = 255 - b[i]!;
+    diff += Math.abs(da - db);
+    mass += Math.max(da, db);
+  }
+  // Two blank pages agree completely; there is nothing to disagree about.
+  return mass === 0 ? 1 : Math.max(0, 1 - diff / mass);
+}
+
+/**
  * Rasterize the same page from both documents and compare them, so the one
  * assurance page identity cannot give is **measured** rather than assumed —
  * specs/behaviors/ink-preservation.md#measuring-whether-the-content-moved,
@@ -182,16 +210,7 @@ export async function measureSimilarity(
           rasterizePage(gs.path, newPath, index + 1, dpi),
         ]);
         if (a.width !== b.width || a.height !== b.height) continue;
-        let diff = 0;
-        let mass = 0;
-        for (let i = 0; i < a.pixels.length; i++) {
-          const da = 255 - a.pixels[i]!;
-          const db = 255 - b.pixels[i]!;
-          diff += Math.abs(da - db);
-          mass += Math.max(da, db);
-        }
-        // Two blank pages agree completely; there is nothing to disagree about.
-        out.set(index, mass === 0 ? 1 : Math.max(0, 1 - diff / mass));
+        out.set(index, compareDarkness(a.pixels, b.pixels));
       } catch {
         // One unmeasurable page must not sink the others, per
         // specs/principles.md#best-effort-operations-report-per-item-outcomes.
