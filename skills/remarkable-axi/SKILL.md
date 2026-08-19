@@ -30,7 +30,8 @@ If it reports `NOT_AUTHENTICATED`, pair with an 8-character code from
    `npx -y remarkable-axi check flyer.html`.
 3. **Send** — `npx -y remarkable-axi put flyer.html "/Talks"`. Replacing an
    inked document refuses by default; see `put --help` for `--replace` and
-   `--discard-ink`.
+   `--discard-ink` (let it go) or `--keep-ink` (carry the strokes onto the
+   replacement — the route that costs nothing).
 4. **Pull ink back** — `npx -y remarkable-axi get "/Talks/Flyer" --overlay`
    for annotations drawn over the original, or `--as text` for OCR'd text.
 

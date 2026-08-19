@@ -1,14 +1,16 @@
 import { extname, basename, join } from "node:path";
 import { mkdtemp, readFile, rm as removeFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { randomUUID } from "node:crypto";
 import { AxiError } from "axi-sdk-js";
-import type { ItemRef, RemarkableApi } from "rmapi-js";
+import type { DocumentContent, ItemRef, RemarkableApi, RmPage } from "rmapi-js";
 import type { Output } from "../output.js";
 import { collapseHome, humanSize } from "../output.js";
 import { client } from "../auth.js";
 import { readConfig } from "../config.js";
 import { panelWidth, widestPanelWidth } from "../devices.js";
-import { listEntries } from "../entries.js";
+import { contentPageOrder, listEntries } from "../entries.js";
+import { pageBoxes, planCarry, summarizeCarry, type CarryPlan } from "../ink-carry.js";
 import { bool, parseFlags, requirePositional, str } from "../flags.js";
 import {
   buildTree,
@@ -61,30 +63,6 @@ function rejectKeepOld(args: string[]): void {
     [
       "to save the annotated version first, use `remarkable-axi get <path> --overlay <file>.pdf`",
       "to keep the old version as a separate document, give it a distinct --name",
-    ],
-  );
-}
-
-/**
- * `--keep-ink` is designed (specs/behaviors/ink-preservation.md) but not
- * shipped: porting a superseded document's strokes onto a freshly uploaded
- * replacement needs a write path this tool could not verify as reliable
- * without live-device testing, which is out of scope here. See
- * https://github.com/JarvusInnovations/remarkable-axi/issues/21. Rejected up
- * front, before any network call, so an agent gets a targeted answer instead
- * of the generic UNKNOWN_FLAG list.
- */
-function rejectKeepInk(args: string[]): void {
-  if (!args.some((a) => a === "--keep-ink" || a.startsWith("--keep-ink="))) {
-    return;
-  }
-  throw new AxiError(
-    "--keep-ink is not implemented; the write path to port ink onto a replacement could not be verified as reliable",
-    "UNKNOWN_FLAG",
-    [
-      "save the annotated version first — remarkable-axi get <path> --overlay <file>.pdf",
-      "then replace and let the tablet copy's ink go — remarkable-axi put <src> <dest> --replace --discard-ink",
-      "https://github.com/JarvusInnovations/remarkable-axi/issues/21",
     ],
   );
 }
@@ -238,12 +216,12 @@ async function upload(
   name: string,
   parent: string,
   bytes: Uint8Array,
-): Promise<string> {
+): Promise<ItemRef> {
   const ref =
     ext === ".pdf"
       ? await api.putPdf(name, bytes, { parent })
       : await api.putEpub(name, bytes, { parent });
-  return ref.id;
+  return ref;
 }
 
 /** A dated, distinguishable name for the superseded document on its way to trash. */
@@ -354,13 +332,88 @@ async function trashSuperseded(
   }
 }
 
+/**
+ * Port a superseded document's strokes onto its replacement — the write path
+ * behind `--keep-ink`, per specs/behaviors/ink-preservation.md#carrying-ink-forward.
+ *
+ * A freshly uploaded multi-page PDF declares **one faked page** in its
+ * `.content` (measured: a 3-page upload reports `pageCount: 1` with a single
+ * page id), so the replacement cannot be addressed page-by-page until a real
+ * page list exists. `updateDocument` writes that list, and `putRmPages` then
+ * writes each page's strokes against it — both verified end to end against the
+ * live cloud before this shipped, which is what the earlier "write path could
+ * not be verified" note was missing.
+ *
+ * Ordering is the safety property: strokes are read **before** the upload and
+ * written **before** the superseded copy is trashed, so every failure mode
+ * leaves the ink somewhere. `carryInk` never trashes; it reports, and its
+ * caller trashes only on a complete carry.
+ */
+async function carryInk(
+  api: RemarkableApi,
+  oldRef: ItemRef,
+  oldContent: unknown,
+  inkedPages: ReadonlyMap<string, RmPage>,
+  newRef: ItemRef,
+  newBytes: Uint8Array,
+  oldBytes: Uint8Array | null,
+): Promise<{ plan: CarryPlan; ref: ItemRef }> {
+  const order = contentPageOrder(oldContent);
+  const indexOf = new Map(order.map((id, i) => [id, i]));
+
+  const inkedIndexes: number[] = [];
+  const pageAt = new Map<number, RmPage>();
+  for (const [id, page] of inkedPages) {
+    const i = indexOf.get(id);
+    if (i === undefined) continue; // already orphaned on the source; not ours to move
+    inkedIndexes.push(i);
+    pageAt.set(i, page);
+  }
+
+  const newBoxes = await pageBoxes(newBytes);
+  if (!newBoxes) {
+    // Without the replacement's page count there is no honest index mapping,
+    // so nothing is written and nothing is trashed.
+    return {
+      plan: {
+        outcomes: inkedIndexes.sort((a, b) => a - b).map((index) => ({
+          index,
+          disposition: "skipped" as const,
+          reason: "the replacement's page count could not be read",
+        })),
+        ported: [],
+        complete: false,
+      },
+      ref: newRef,
+    };
+  }
+  const oldBoxes = (oldBytes ? await pageBoxes(oldBytes) : null) ?? [];
+  const plan = planCarry(inkedIndexes, newBoxes.length, oldBoxes, newBoxes);
+  if (plan.ported.length === 0) return { plan, ref: newRef };
+
+  // Declare the replacement's real page list. Fresh ids rather than the
+  // superseded document's, so nothing depends on page ids being reusable
+  // across two documents that briefly coexist.
+  const ids = Array.from({ length: newBoxes.length }, () => randomUUID() as string);
+  let ref = await api.updateDocument(newRef, {
+    pages: ids,
+    pageCount: ids.length,
+    redirectionPageMap: ids.map((_, i) => i),
+  } as Partial<DocumentContent>);
+
+  const writes = new Map<string, RmPage>();
+  for (const i of plan.ported) writes.set(ids[i]!, pageAt.get(i)!);
+  ref = await api.putRmPages(ref, writes);
+
+  return { plan, ref };
+}
+
 export async function put(args: string[]): Promise<Output> {
   rejectKeepOld(args);
-  rejectKeepInk(args);
 
   const parsed = parseFlags("put", args, {
     value: ["--name"],
-    boolean: ["--replace", "--discard-ink", "--device-page", "--strict"],
+    boolean: ["--replace", "--discard-ink", "--keep-ink", "--device-page", "--strict"],
   });
 
   const src = requirePositional(
@@ -426,17 +479,47 @@ export async function put(args: string[]): Promise<Output> {
     // specs/behaviors/ink-preservation.md#cloud-checks-see-only-synced-ink.
     const lastSynced = age(old.entry.lastModified);
 
-    if (!bool(parsed, "--discard-ink")) {
-      const ink = await detectInk(api, {
-        id: old.entry.id,
-        hash: old.entry.hash,
-      });
+    const keepInk = bool(parsed, "--keep-ink");
+    if (keepInk && bool(parsed, "--discard-ink")) {
+      throw new AxiError(
+        "pass either --keep-ink or --discard-ink, not both",
+        "USAGE",
+        [
+          "--keep-ink ports the superseded document's strokes onto the replacement",
+          "--discard-ink replaces and lets them go",
+        ],
+      );
+    }
+
+    const oldRef: ItemRef = { id: old.entry.id, hash: old.entry.hash };
+
+    // Read the strokes BEFORE anything is uploaded: if this fails, the
+    // original is untouched and nothing has been promised.
+    let carried: ReadonlyMap<string, RmPage> = new Map();
+    let oldContent: unknown = null;
+    let oldBytes: Uint8Array | null = null;
+    if (keepInk) {
+      carried = await api.getRmPages(oldRef);
+      if (carried.size > 0) {
+        oldContent = await api.getContent(oldRef);
+        try {
+          oldBytes = await api.getPdf(oldRef);
+        } catch {
+          // Box comparison degrades to "assume unchanged" — planCarry treats
+          // an unknown box as no evidence of a mismatch.
+        }
+      }
+    }
+
+    if (!bool(parsed, "--discard-ink") && !keepInk) {
+      const ink = await detectInk(api, oldRef);
       if (ink) {
         throw new AxiError(
           `${destPath} has ink on ${ink.inkedPages} of ${ink.totalPages} pages; --replace would discard it\n` +
             `last synced ${lastSynced} — ink written on-device since then is invisible to this check`,
           "HAS_INK",
           [
+            `carry it onto the replacement — remarkable-axi put ${src} ${destPath} --replace --keep-ink`,
             `save it separately first — remarkable-axi get ${destPath} --overlay <file>.pdf`,
             `or replace and let it go — remarkable-axi put ${src} ${destPath} --replace --discard-ink`,
           ],
@@ -448,8 +531,21 @@ export async function put(args: string[]): Promise<Output> {
     const parent = old.entry.parent ?? "";
 
     // Upload first: if this throws, the original is still there.
-    await upload(api, source.ext, name, parent, source.buffer);
-    const trash = await trashSuperseded(api, old);
+    const newRef = await upload(api, source.ext, name, parent, source.buffer);
+
+    // Carry ink before trashing anything. A partial carry keeps the
+    // superseded copy out of the trash entirely — strokes that could not
+    // ride are still readable there, which is the whole point of the flag.
+    let carryPlan: CarryPlan | null = null;
+    if (keepInk && carried.size > 0) {
+      const result = await carryInk(
+        api, oldRef, oldContent, carried, newRef, source.buffer, oldBytes,
+      );
+      carryPlan = result.plan;
+    }
+
+    const holdBack = carryPlan !== null && !carryPlan.complete;
+    const trash = holdBack ? ({ ok: false } as const) : await trashSuperseded(api, old);
 
     return {
       uploaded: {
@@ -463,9 +559,16 @@ export async function put(args: string[]): Promise<Output> {
       ...(source.url ? { source: source.url } : {}),
       ...(source.imagesFor ? { images_for: source.imagesFor } : {}),
       last_synced: lastSynced,
+      ...(carryPlan ? { kept_ink: summarizeCarry(carryPlan) } : {}),
       ...(trash.ok
         ? { backup: { trashed: trash.name, id: old.entry.id.slice(0, 8) } }
-        : { warning: "the superseded document could not be moved to trash" }),
+        : holdBack
+          ? {
+              warning:
+                "some strokes could not be carried — the superseded document was LEFT IN PLACE, not trashed, so nothing is lost",
+              superseded: { name: old.entry.visibleName, id: old.entry.id.slice(0, 8) },
+            }
+          : { warning: "the superseded document could not be moved to trash" }),
       help: [
         `Run \`remarkable-axi ls ${parentPathOf(destPath)}\` to confirm it landed`,
       ],
