@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { planCarry, summarizeCarry, type PageBox } from "../src/ink-carry.js";
+import {
+  SIMILARITY_WARN,
+  carryTable,
+  measureSimilarity,
+  planCarry,
+  summarizeCarry,
+  withSimilarity,
+  type PageBox,
+} from "../src/ink-carry.js";
 
 const box = (w: number, h: number): PageBox => ({ width: w, height: h });
 const A4 = box(509, 679);
@@ -64,5 +72,57 @@ describe("summarizeCarry", () => {
     const summary = summarizeCarry(planCarry([0, 2], 1, [A4, A4, A4], [A4]));
     expect(summary.ported).toBe(1);
     expect((summary.orphaned as string[])[0]).toContain("page 3");
+  });
+});
+
+describe("measureSimilarity", () => {
+  // Real PDFs with real drawn content: the point of the measurement is that
+  // it compares rendered pixels, so a synthetic stand-in would test nothing.
+  async function pdf(pages: { text: string }[]): Promise<Uint8Array> {
+    const { PDFDocument, StandardFonts } = await import("pdf-lib");
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    for (const p of pages) {
+      const page = doc.addPage([509, 679]);
+      page.drawText(p.text, { x: 40, y: 400, size: 48, font });
+    }
+    return doc.save();
+  }
+
+  it("scores an unchanged page near 1", async () => {
+    const a = await pdf([{ text: "ALPHA" }]);
+    const sim = await measureSimilarity(a, a, [0]);
+    expect(sim.get(0)!).toBeGreaterThan(0.99);
+  });
+
+  // The failure index matching is structurally blind to: insert a page at the
+  // front and every later page still has a matching index and page box, while
+  // all of its ink now sits on the wrong content.
+  it("scores a page shifted by a mid-document insert well below the warn line", async () => {
+    const before = await pdf([{ text: "ALPHA" }, { text: "BETA" }]);
+    const after = await pdf([{ text: "ALPHA" }, { text: "INSERT" }, { text: "BETA" }]);
+    const sim = await measureSimilarity(before, after, [1]);
+    expect(sim.get(1)!).toBeLessThan(SIMILARITY_WARN);
+  });
+
+  it("reports nothing rather than guessing when a page cannot be rendered", async () => {
+    const a = await pdf([{ text: "ALPHA" }]);
+    const sim = await measureSimilarity(a, a, [7]); // page 8 of a 1-page doc
+    expect(sim.has(7)).toBe(false);
+  });
+});
+
+describe("carryTable", () => {
+  it("gives every inked page a row, and distinguishes unmeasured from fine", () => {
+    const plan = withSimilarity(planCarry([0, 1], 2), new Map([[0, 0.995]]));
+    const rows = carryTable(plan);
+    expect(rows[0]).toMatchObject({ page: 1, ported: "yes", similarity: "0.99", note: "layout unchanged" });
+    // Page 2 ported but was never measured — that must not read as agreement.
+    expect(rows[1]).toMatchObject({ page: 2, ported: "yes", similarity: "—", note: "layout not compared" });
+  });
+
+  it("flags a shifted page in words, not just a number", () => {
+    const plan = withSimilarity(planCarry([0], 1), new Map([[0, 0.61]]));
+    expect(carryTable(plan)[0]!.note).toContain("no longer sit on what it annotated");
   });
 });

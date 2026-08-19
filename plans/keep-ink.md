@@ -1,90 +1,102 @@
 ---
-status: done
-depends: [device-reattach]
+status: in-progress
+depends: [ink-preservation, device-reattach]
 specs:
   - specs/behaviors/ink-preservation.md
   - specs/commands/put.md
 issues: [21]
 ---
 
-# Plan: `put --replace --keep-ink`
+# Plan: ship `put --replace --keep-ink`
 
 ## Scope
 
-Ship the third route out of the `HAS_INK` refusal: carry a superseded
-document's strokes onto its replacement, so a regenerated document keeps its
-handwriting as **live strokes** rather than a flattened image or a trashed copy.
+Build the flag [`ink-preservation`](ink-preservation.md) designed but
+deliberately did not ship, closing its follow-up: carry a superseded
+document's strokes onto its replacement, with the per-page outcome table and
+the measured page similarity that plan specified.
 
-In scope: the write path, the by-index matching rules, the partial-carry
-safety rule, and the spec/flag documentation. Out of scope: transforming ink
-across a changed page box (refused, not attempted), and recovering strokes the
-device never synced (`device orphans` already owns that).
+**This plan owns only the part that was deferred.** The guard, the renamed
+backup, and the `HAS_INK` refusal all shipped there; here they only change
+insofar as the refusal now offers `--keep-ink` first.
 
 ## Implements
 
-- **specs/behaviors/ink-preservation.md § Carrying ink forward** — the whole
-  behavior, including the outcome table this plan did not have to re-derive:
-  it was written down when the feature was deferred.
-- **specs/commands/put.md** — the flag, and the `USAGE` error when both ink
-  flags are passed.
+- **specs/behaviors/ink-preservation.md § Carrying ink forward** — the design
+  was already written down in full, including the ported/orphaned/skipped
+  table. Nothing here re-derived it.
+- **§ Measuring whether the content moved** — the per-page similarity, which
+  is the half of the spec a naive index-matching implementation silently omits.
+- **specs/commands/put.md** — the flag and the both-ink-flags `USAGE` error.
 
 ## Approach
 
-**The deferral rested on an unmeasured assumption, so the first step was to
-measure it.** Issue #21 recorded that porting ink needed a write path that
-could not be verified without live-device access. Two probes against the live
-cloud settled it:
+**The predecessor's gating risk was the right one, and it is only half
+retired.** [`ink-preservation`](ink-preservation.md) prototyped both candidate
+write paths and recorded the outcome: `putDocumentArchive` reassigns the
+document id (wrong tool), while manufacturing the page list — `putPdf` fakes a
+one-page `.content`, `updateDocument` shallow-merges a real one over it,
+`putRmPages` attaches strokes to those ids — needs no experimental call. That
+analysis was correct and is reused wholesale.
 
-1. A freshly uploaded 3-page PDF reports `pageCount: 1` with a single faked
-   page id — confirming the worry exactly. Strokes are addressed by page id,
-   so there is nothing to write onto yet.
-2. `updateDocument` can declare the real page list, and `putRmPages` then
-   writes strokes against it. Declared a 3-page list on a fresh upload, wrote
-   real strokes onto page 3, read them back — matched.
+What this plan adds is **execution rather than inference**: the path was run
+end to end against the live cloud. A fresh 3-page upload does report
+`pageCount: 1` with a single faked page id, exactly as predicted; declaring a
+3-page list and writing real strokes onto page 3 round-trips and reads back.
 
-So the path is: read strokes → upload → declare page list → write strokes.
-`putDocumentArchive`, the API the original investigation looked at, was the
-wrong tool (it reassigns the document id); the page-addressed writers are the
-right one.
+What it does **not** add is the answer to the question the predecessor
+actually gated on — whether the *device* honors a client-supplied page list on
+first open, or repaginates and orphans the ported ink. That remains open, and
+the flag ships ahead of it on a changed risk calculus rather than a resolved
+risk: `device orphans` and `device reattach` did not exist when that judgment
+was made, and they turn "silently orphaned on the tablet" into a listed,
+recoverable state. If the drill shows repagination, the honest response is to
+gate the flag behind a device check, not to widen the claim.
 
-**Ordering is the safety property.** Strokes are read before the upload and
-written before the superseded copy is trashed, so every failure leaves the ink
-somewhere reachable. On a partial carry the old document is not trashed at
-all, and the output says which pages did not make it and why.
-
-**Matching is by index**, which makes the append case — a growing document
-whose earlier pages hold ink — work with no special handling.
+**Similarity is not optional garnish.** Matching by index is structurally blind
+to a page inserted mid-document: every later page keeps a valid index and page
+box while all of its ink lands on the wrong content. Rasterizing both pages and
+comparing them is what sees it, and it is measured with `check`'s own
+rasterizer — whose docstring already named this as its second caller.
 
 ## Validation
 
-- [x] `planCarry` covers the spec's three outcomes (ported / orphaned /
-      skipped) plus the append case and the unknown-box case; unit-tested
-      without a network.
-- [x] The cloud write path is verified end to end (declare list → write
-      strokes → read back) rather than assumed.
-- [x] A partial carry leaves the superseded document in place and reports it.
-- [x] `--keep-ink` with `--discard-ink` is a `USAGE` error.
-- [x] The `HAS_INK` refusal offers `--keep-ink` first.
-- [ ] **Hardware**: the device honors a client-supplied page list on first
-      open (rather than regenerating). Recoverable either way via
-      `device orphans` / `device reattach`, which is why this ships ahead of
-      the answer.
+Carried over from [`ink-preservation`](ink-preservation.md), whose keep-ink
+boxes stayed unchecked when the flag was pulled:
+
+- [x] The refusal offers `--keep-ink`, the `get --overlay` save, and `--discard-ink`
+- [x] `--keep-ink` ports strokes onto same-box pages
+- [x] Appending pages: existing pages keep ink, appended pages arrive clean
+- [x] Shorter replacement: orphaned ink reported per page, not silently dropped
+- [x] Changed page box on a page: skipped and reported, not misplaced
+- [x] Per-page table reports ported / orphaned / skipped and a similarity for
+      each ported page
+- [x] A page inserted mid-document produces low similarity on the shifted pages
+- [x] An unmeasurable similarity prints `—` and says "layout not compared" —
+      never rendered indistinguishable from a measured pass
+- [x] A partial carry leaves the superseded document **untrashed**, and says so
+- [x] `--keep-ink` with `--discard-ink` is a `USAGE` error
+- [x] A replacement whose page count cannot be read carries nothing rather
+      than guessing an index mapping
+- [ ] **Hardware drill**: replace an inked multi-page document on a real
+      tablet, open it, and confirm the ported strokes sit on the pages they
+      were written to — the predecessor's open question, unchanged.
 
 ## Risks / unknowns
 
-- **The page-list question is genuinely open on hardware.** If the device
-  regenerates page ids on first open, ported strokes become orphans inside the
-  new document rather than losses — recoverable, and detectable with
-  `device orphans`. This is the one claim in the spec not backed by a
-  measurement, and it is labelled as such there.
-- **Page-box comparison needs the superseded PDF**, one extra download, and
-  only when there is ink to carry. When that fetch fails the comparison
-  degrades to "assume unchanged" rather than blocking the carry — a wrong
-  assumption there misplaces ink, so the degrade is logged in the outcome
-  rather than silent.
-- **Two documents briefly coexist** between upload and trash. Fresh page ids
-  (rather than reusing the superseded document's) keep that overlap from
-  depending on page ids being unique only per-document.
+- **We might have to take the flag back out.** The device question is
+  unresolved, and the predecessor's judgment — that shipping on unverified
+  device behaviour is the failure
+  [Measure the device](../specs/principles.md#measure-the-device-never-ship-a-guessed-constant)
+  exists to prevent — has not been refuted, only re-weighted against a
+  recovery path that now exists. Said out loud before merge, per
+  [Reversal is cheaper before the build].
+- **A reflowed page still ports its ink**, by design: similarity warns, never
+  refuses. The guarantee in help must stay narrow — same box and index means
+  the ink lands where it was, not that it still means what it meant.
+- **Similarity costs a Ghostscript pass per ported page.** Held down with a
+  coarse 36dpi (displacement is a gross-scale signal) and by measuring only
+  pages that actually ported.
 
 ## Notes
 

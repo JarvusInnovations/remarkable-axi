@@ -10,7 +10,15 @@ import { client } from "../auth.js";
 import { readConfig } from "../config.js";
 import { panelWidth, widestPanelWidth } from "../devices.js";
 import { contentPageOrder, listEntries } from "../entries.js";
-import { pageBoxes, planCarry, summarizeCarry, type CarryPlan } from "../ink-carry.js";
+import {
+  carryTable,
+  measureSimilarity,
+  pageBoxes,
+  planCarry,
+  summarizeCarry,
+  withSimilarity,
+  type CarryPlan,
+} from "../ink-carry.js";
 import { bool, parseFlags, requirePositional, str } from "../flags.js";
 import {
   buildTree,
@@ -388,8 +396,15 @@ async function carryInk(
     };
   }
   const oldBoxes = (oldBytes ? await pageBoxes(oldBytes) : null) ?? [];
-  const plan = planCarry(inkedIndexes, newBoxes.length, oldBoxes, newBoxes);
+  let plan = planCarry(inkedIndexes, newBoxes.length, oldBoxes, newBoxes);
   if (plan.ported.length === 0) return { plan, ref: newRef };
+
+  // Measure whether the content moved under the ink. Index matching cannot
+  // see a page inserted mid-document; a rendered comparison can, and the
+  // spec requires it be measured rather than inferred.
+  if (oldBytes) {
+    plan = withSimilarity(plan, await measureSimilarity(oldBytes, newBytes, plan.ported));
+  }
 
   // Declare the replacement's real page list. Fresh ids rather than the
   // superseded document's, so nothing depends on page ids being reusable
@@ -559,7 +574,9 @@ export async function put(args: string[]): Promise<Output> {
       ...(source.url ? { source: source.url } : {}),
       ...(source.imagesFor ? { images_for: source.imagesFor } : {}),
       last_synced: lastSynced,
-      ...(carryPlan ? { kept_ink: summarizeCarry(carryPlan) } : {}),
+      ...(carryPlan
+        ? { kept_ink: summarizeCarry(carryPlan), ink: carryTable(carryPlan) }
+        : {}),
       ...(trash.ok
         ? { backup: { trashed: trash.name, id: old.entry.id.slice(0, 8) } }
         : holdBack
