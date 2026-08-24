@@ -3,10 +3,11 @@ import type { Entry } from "rmapi-js";
 import type { Output } from "../output.js";
 import { client } from "../auth.js";
 import { loadTree, recordMutation } from "../cache.js";
-import { bool, parseFlags, requirePositional } from "../flags.js";
+import { bool, parseFlags, requirePositional, str } from "../flags.js";
 import {
   buildTree,
   lookup,
+  nodesAt,
   mkdirp,
   normalizePath,
   resolveParentId,
@@ -53,7 +54,7 @@ export async function mkdir(args: string[]): Promise<Output> {
 }
 
 export async function mv(args: string[]): Promise<Output> {
-  const parsed = parseFlags("mv", args, {});
+  const parsed = parseFlags("mv", args, { value: ["--name"] });
   const from = normalizePath(
     requirePositional(
       parsed,
@@ -70,6 +71,8 @@ export async function mv(args: string[]): Promise<Output> {
       "Run `remarkable-axi mv <path> <dest-dir>`",
     ),
   );
+
+  const newName = str(parsed, "--name", "");
 
   const api = await client();
   const tree = buildTree((await loadTree(api)).entries);
@@ -99,21 +102,57 @@ export async function mv(args: string[]): Promise<Output> {
     ]);
   }
 
-  if ((node.entry.parent ?? "") === parent) {
+  const landingName = newName || node.entry.visibleName;
+  const samePlace = (node.entry.parent ?? "") === parent;
+
+  // Nothing asked for and nothing to do — but a --name that differs is a
+  // rename, and renames in place are real work.
+  if (samePlace && landingName === node.entry.visibleName) {
     return {
       moved: `${from} is already in ${to} (no-op)`,
       help: [`Run \`remarkable-axi ls "${to}"\` to see its contents`],
     };
   }
 
-  const moved = await api.move({ id: node.entry.id, hash: node.entry.hash }, parent);
+  // A move is the easiest way to manufacture a duplicate by accident: it
+  // carries a name the user may not have in mind into a folder they cannot
+  // see. Refuse an occupied landing path rather than create a state every
+  // other command refuses to operate on —
+  // specs/behaviors/path-uniqueness.md#on-write.
+  const landingPath = to === "/" ? `/${landingName}` : `${to}/${landingName}`;
+  const occupants = nodesAt(tree, landingPath).filter((n) => n.entry.id !== node.entry.id);
+  if (occupants.length > 0) {
+    throw new AxiError(
+      `${landingPath} already exists (${occupants[0]!.entry.id.slice(0, 8)})`,
+      "EXISTS",
+      [
+        `land it under a distinct name — remarkable-axi mv "${from}" "${to}" --name "<name>"`,
+        `or clear the occupant deliberately — remarkable-axi rm "${landingPath}"`,
+      ],
+    );
+  }
+
+  let ref = { id: node.entry.id, hash: node.entry.hash };
+  if (landingName !== node.entry.visibleName) {
+    ref = await api.rename(ref, landingName);
+  }
+  if (!samePlace) {
+    ref = await api.move(ref, parent);
+  }
 
   await recordMutation(api, {
-    upsert: [{ ...node.entry, hash: moved.hash, parent } as Entry],
+    upsert: [
+      { ...node.entry, hash: ref.hash, parent, visibleName: landingName } as Entry,
+    ],
   });
 
   return {
-    moved: { name: node.entry.visibleName, from, to },
+    moved: {
+      name: landingName,
+      ...(landingName !== node.entry.visibleName ? { was: node.entry.visibleName } : {}),
+      from,
+      to: landingPath,
+    },
     help: [`Run \`remarkable-axi ls "${to}"\` to confirm`],
   };
 }
