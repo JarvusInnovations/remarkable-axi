@@ -82,7 +82,7 @@ recovery procedure — proven end to end in two real incidents.
 ### Organize
 
 - `npx -y remarkable-axi mkdir <path>` — Create a folder and every missing parent (idempotent)
-- `npx -y remarkable-axi mv <path> <dest-dir>` — Move a document or folder into another folder
+- `npx -y remarkable-axi mv <path> <dest-dir> [--name <name>]` — Move a document or folder into another folder, optionally renaming it
 - `npx -y remarkable-axi rm <path>` — Move a document or folder to the trash
 
 ### Setup
