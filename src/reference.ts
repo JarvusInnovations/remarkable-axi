@@ -162,9 +162,13 @@ export const COMMAND_GROUPS: CommandGroup[] = [
         examples: ["remarkable-axi mkdir /Studies/Physics/Term1"],
       },
       {
-        usage: "mv <path> <dest-dir>",
-        summary: "Move a document or folder into another folder",
-        examples: ["remarkable-axi mv /Inbox/paper.pdf /Papers"],
+        usage: "mv <path> <dest-dir> [--name <name>]",
+        summary: "Move a document or folder into another folder, optionally renaming it",
+        flags: ["--name <name>  the name it lands under (same folder + new name = rename in place)"],
+        examples: [
+          "remarkable-axi mv /Inbox/paper.pdf /Papers",
+          'remarkable-axi mv /Daily/Today /Daily/Weeks --name "2026-W34"',
+        ],
       },
       {
         usage: "rm <path>",
