@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: done
 depends: []
 specs:
   - specs/behaviors/path-uniqueness.md
@@ -57,7 +57,7 @@ destination stays unambiguously a folder and the new name is explicit.
 - [x] `--name` colliding in the destination fails the same way
 - [x] The pre-existing no-guard behavior is gone — a plain `mv` onto an
       occupied name refuses rather than duplicating
-- [ ] Live: shelve a real week scroll with `mv --name` and confirm the ink
+- [x] Live: shelve a real week scroll with `mv --name` and confirm the ink
       survives as live strokes (the reason this exists)
 
 ## Risks / unknowns
@@ -71,8 +71,32 @@ destination stays unambiguously a folder and the new name is explicit.
 
 ## Notes
 
-*Populated at closeout.*
+**Shelved a real annotated scroll on 2026-08-24**: an 8-page week carrying live
+strokes moved to `/Daily/Weeks/2026-W34` in one call, ink intact as strokes,
+document identity and `lastModified` preserved — which is the right archive
+semantics, since the shelf reads as "last touched Thursday" rather than "made
+today."
+
+**The move removed the last `--discard-ink` from the whole weekly cycle.** The
+old shelf ritual baked the week to a flat PDF purely to attach a name on
+re-upload, then discarded the live layer. Both steps existed only because
+rename was unreachable.
+
+**It also relaxed an ordering constraint nobody had questioned.** The scribble
+sweep had to happen *before* rotation, because rotation destroyed the ink.
+Moving preserves it indefinitely, so triage is now a backend task against the
+shelf rather than a gate on starting the week.
+
+**One wording bug surfaced next door**: `put --replace` reports
+`last_synced: <age of entry.lastModified>` with the gloss "ink written
+on-device since then is invisible to this check." For a document nobody has
+touched, that reads as device-sync staleness when it only ever measures the
+document — it sent this session chasing a sync problem that did not exist
+while the tablet was syncing other notebooks hourly.
 
 ## Follow-ups
 
-*Populated at closeout.*
+- **Issue** — reword or re-source `put --replace`'s `last_synced`. The honest
+  comparison is against the account's most recently modified item: if anything
+  else synced an hour ago, this document being days old means *nothing was
+  written*, not *nothing arrived*.
