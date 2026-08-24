@@ -38,6 +38,24 @@ help: replace it —
 There is no flag that uploads a second document to an occupied path. See
 [Never manufacture a state the tool refuses to operate on](../principles.md#never-manufacture-a-state-the-tool-refuses-to-operate-on).
 
+`mv` refuses on the same terms, and for a sharper reason: **moving is the easiest
+way to manufacture a duplicate by accident.** `put` at least names the document it
+is about to land, while a move carries a name the user may not have in mind and
+drops it into a folder they cannot see. A move whose landing path is occupied —
+whether by the document's own name or by `--name` — fails as `EXISTS`, names the
+occupant's short id, and moves nothing:
+
+```
+error: /Papers/Draft already exists (a3f21b0c)
+help: land it under a distinct name —
+        remarkable-axi mv /Inbox/Draft /Papers --name "Draft v2"
+      or replace the occupant deliberately —
+        remarkable-axi rm /Papers/Draft
+```
+
+Moving an item into the folder it already occupies stays a no-op, **unless
+`--name` asks for a different name** — that is a rename, and it does the work.
+
 ### On read
 
 `ls` marks duplicated names in its listing and reports the count in its summary.

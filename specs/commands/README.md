@@ -21,7 +21,7 @@ Browse
 
 Organize
   mkdir <path>                                      create a folder and missing parents
-  mv <path> <dest>                                  move into another folder
+  mv <path> <dest> [--name <n>]                     move into another folder, optionally renaming
   rm <path>                                         move to trash
 
 Setup
