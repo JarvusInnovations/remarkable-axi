@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: done
 depends: [keep-ink]
 specs:
   - specs/behaviors/ink-preservation.md
@@ -85,8 +85,8 @@ the table cell stays short.
       PDF from an unrenderable page
 - [x] The table still prints `—` / `layout not compared`, unchanged
 - [x] The regression from #55 reproduces on the old code and passes on the new:
-      a two-page source whose page list carries a third id ports nothing and
-      keeps the original
+      a two-page document whose page list carries a third id ports its two real
+      pages, names the third as skipped, and keeps the original
 
 ## Risks / unknowns
 
@@ -108,4 +108,41 @@ the table cell stays short.
 
 ## Notes
 
+**The existing tests could not have caught either half.** `fakeApi.getPdf`
+threw unconditionally, so every `--keep-ink` test ran the degrade path: no
+superseded PDF, no page boxes, no measurement. That is why a suite with an
+explicit "distinguishes unmeasured from fine" assertion still passed while the
+decision failed to distinguish them, and why nothing bounded the source index —
+`oldBoxes` was always empty, so the bound would have been unreachable anyway.
+The fixture now serves a real superseded PDF, which is what makes the
+corroborated path testable at all.
+
+**Both halves of #55 were probably one event.** The likeliest reason the
+similarity was unmeasurable on that run is the phantom index itself: Ghostscript
+cannot rasterize page 3 of a two-page PDF, so the comparison threw and the page
+came back unmeasured. Part 2 is the cause and part 1 is the backstop that should
+have caught it anyway. Fixing either alone would have left the run wrong.
+
+**An out-of-range index is not necessarily corrupt metadata.** A page added on
+the device to a PDF that never had one produces exactly this signature —
+genuine ink at an index the source PDF cannot account for. That is why the
+outcome is skipped-and-reported rather than an error, and why the superseded
+copy is what keeps the strokes.
+
+**The suggestion deliberately avoids `rm <path>`.** While the superseded copy is
+held back, two documents answer to one path and `rm` resolves it
+first-writer-wins, so that hint could trash the replacement. The help names the
+collision and the superseded document's id instead.
+
 ## Follow-ups
+
+- **Deferred**: rename the superseded copy in place when it is held back, the
+  way it is renamed on its way to trash. It would clear the path collision the
+  hold-back creates — `put --replace` currently refuses `AMBIGUOUS` afterwards —
+  and make `rm` unambiguous again. Out of scope here because it changes the
+  existing partial-carry branch too, which #55 did not ask about.
+- **None** for the underlying cause: why that `.content` page list ran longer
+  than its document is unresolved, and not answerable from the cloud side. No
+  issue filed, because there is nothing to act on until the guard fires again —
+  and when it does, its message names the page counts that ruled the index out,
+  which is where a diagnosis would start.
