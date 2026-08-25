@@ -117,10 +117,12 @@ list on a fresh upload, write real strokes onto its third page, read them back
 — before this shipped. That round-trip is what the earlier "the write path
 could not be verified as reliable" note was missing.
 
-**The superseded copy is trashed only on a complete carry.** If any inked page
-is orphaned or skipped, the old document is left in place — not trashed — and
-the output says so. A partial carry must never be the moment ink becomes hard
-to find.
+**The superseded copy is trashed only on a complete, corroborated carry.** If
+any inked page is orphaned or skipped, *or* if a page ported without its
+placement being measured, the old document is left in place — not trashed — and
+the output says so. A partial or unverified carry must never be the moment ink
+becomes hard to find; leaving the superseded copy beside its replacement is what
+lets the two be compared at all.
 
 **The device honors a client-supplied page list** — measured 2026-08-19 on a
 Paper Pro rather than assumed: an inked 3-page document replaced by a 4-page
@@ -136,16 +138,39 @@ the same ink twice, one copy uneditable.
 stored per page and positioned in page-relative coordinates, so where the page box is
 unchanged the strokes transfer verbatim.
 
-Pages are matched **by index**. Each inked page has one of three outcomes:
+Pages are matched **by index**. Each inked page has one of four outcomes:
 
 | Condition | Outcome |
 | --- | --- |
 | page N exists in the new document with the same page box | ported |
+| page N is beyond the *superseded* document's own page count | skipped — reported |
 | page N does not exist (new document is shorter) | orphaned — reported loudly |
 | page N exists with a different page box | skipped — reported |
 
+The rows are evaluated in that order: a source index the superseded document never
+had is rejected before the replacement is consulted at all, because no replacement
+can make that mapping meaningful.
+
 Appending pages therefore works with no special handling: existing pages keep their
 ink and the appended ones arrive clean.
+
+**The superseded document's page count comes from its PDF, not from its page
+list.** A stroke file is addressed by page id, and an index is recovered by
+looking that id up in the document's `.content` page order — a list that has been
+observed to be longer than the document it describes, yielding an index of 2 for a
+two-page PDF
+([#55](https://github.com/JarvusInnovations/remarkable-axi/issues/55)). Bounding
+the index against that same list would therefore validate nothing. The bound is the
+count of page boxes parsed out of the superseded PDF, which is the document itself
+rather than metadata about it.
+
+An index past that bound is **not** treated as ink loss, because the strokes are
+real and the superseded copy keeps them: it is reported as skipped, with the page
+count that ruled it out. Its most likely benign cause is a page added on the device
+to a PDF that never had one — genuine ink with no counterpart in the source
+document, and nothing a replacement's page N can be assumed to correspond to. The
+honest handling is the same either way: do not write it, say why, keep the copy that
+holds it.
 
 **There is no page-count gate.** Equal page counts assert nothing about whether a
 page's content moved, and requiring them blocks the common append case while
@@ -183,6 +208,36 @@ their ink while every count and page box still checks out.
 Low similarity is a warning, never a refusal — the superseded copy is intact, so the
 user can judge.
 
+### "Not measured" must never look like "measured and fine"
+
+A similarity can be absent as well as low: the superseded PDF may not be fetchable,
+no renderer may be installed, or a page may not render. The measurement exists to
+catch ink landing on content that moved, so skipping it is not neutral — it is the
+tool knowing least at exactly the moment the guard was meant to run. Absence is
+reported as absence, never rendered as agreement, in all three places a reader
+looks:
+
+- **the table** — `similarity` prints `—` and the note reads `layout not compared`,
+  distinct from `layout unchanged`;
+- **the summary** — an unverified port is listed under `kept_ink.unverified`,
+  naming the page *and the reason the comparison could not be made*, so the reader
+  is not left to guess whether the tool lacked a renderer or the page was
+  unrenderable;
+- **the decision** — an unverified port does not count toward a corroborated carry,
+  so the superseded copy is not trashed.
+
+The strokes are still written. Writing them onto the replacement destroys nothing,
+and withholding them would lose the ink for a reason that is about the tool rather
+than about the document. What is withheld is the *destructive* half — trashing the
+original — because that is the step that turns an unverified carry into a
+hard-to-check one. The two documents then sit side by side under one path, which is
+loud, recoverable, and exactly the condition under which a human should look.
+
+The cost is real and accepted: on a machine with no renderer, every `--keep-ink`
+leaves the superseded copy in place, and the output says which tool would close the
+gap. Trashing on an unverified carry would be the cheaper default and the wrong one
+— it would make the silent path the convenient one.
+
 ## Principles
 
 **Inherited** — project principles that especially bite here:
@@ -192,4 +247,8 @@ user can judge.
 - [Best-effort operations report per-item outcomes](../principles.md#best-effort-operations-report-per-item-outcomes)
   — the per-page outcome table, and why the page-count gate was rejected.
 - [Measure the device; never ship a guessed constant](../principles.md#measure-the-device-never-ship-a-guessed-constant)
-  — page similarity is measured rather than inferred from metadata.
+  — page similarity is measured rather than inferred from metadata, and where it
+  cannot be measured the tool reports what it could not determine instead of
+  letting the absence pass for a result. The same principle is why the superseded
+  document's page count is parsed from its PDF rather than taken from a page list
+  that has been wrong.

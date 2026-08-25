@@ -90,7 +90,7 @@ export const COMMAND_GROUPS: CommandGroup[] = [
           "--name <name>    document name shown on the device (default: derived from source)",
           "--replace        swap the contents of the document already at <dest> (uploads first, then trashes the old copy under a dated name — the safe form of rm-then-put)",
           "--discard-ink    with --replace, proceed even though the target carries ink",
-          "--keep-ink       with --replace, carry the target's strokes onto the replacement",
+          "--keep-ink       with --replace, carry the target's strokes onto the replacement (the old copy stays put unless every ported page's layout was compared and matched)",
           "--device-page    override an HTML source's declared @page with the device page box",
           "--strict         treat check-level error findings as fatal instead of warnings",
         ],
