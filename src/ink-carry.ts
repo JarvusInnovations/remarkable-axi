@@ -44,14 +44,20 @@ export interface CarryOutcome {
    * not be measured; absence is reported, not treated as agreement.
    */
   similarity?: number;
+  /**
+   * Why a ported page has no `similarity` — an absent renderer, an unfetchable
+   * superseded PDF, a page that would not render. "Layout not compared" is not
+   * actionable on its own, so the absence carries its cause.
+   */
+  unverifiedReason?: string;
 }
 
 export interface CarryPlan {
   outcomes: CarryOutcome[];
   /** Indexes whose strokes should be written onto the replacement. */
   ported: number[];
-  /** True when every inked page ported — the only case where the superseded
-   * copy is safe to trash. */
+  /** True when every inked page ported. Necessary but not sufficient for
+   * trashing the superseded copy — see `safeToTrash`. */
   complete: boolean;
 }
 
@@ -83,10 +89,20 @@ function sameBox(a: PageBox | undefined, b: PageBox | undefined): boolean {
 /**
  * Decide, per inked page, whether its strokes can ride onto the replacement.
  *
- * Three outcomes, per the spec's table:
+ * Four outcomes, per the spec's table, evaluated in this order:
+ *   - the index is past the end of the **superseded** document → **skipped**
  *   - the replacement has a page at that index, same box → **ported**
  *   - the replacement is shorter than that index → **orphaned**
  *   - the page exists but its box changed → **skipped**
+ *
+ * The source bound comes first because no replacement can make an index the
+ * superseded document never had into a meaningful mapping, and it is taken
+ * from `oldBoxes` — page boxes parsed out of the superseded PDF, the document
+ * itself — rather than from the `.content` page list an index is recovered
+ * from. That list has been observed running longer than the document it
+ * describes, putting ink on "page 3" of a two-page PDF
+ * (https://github.com/JarvusInnovations/remarkable-axi/issues/55); a bound
+ * derived from the suspect input could not have caught it.
  *
  * A box change is not a transformation we attempt: ink is positioned in
  * page-relative coordinates, so replaying it onto a differently-shaped page
@@ -103,7 +119,23 @@ export function planCarry(
   const outcomes: CarryOutcome[] = [];
   const ported: number[] = [];
 
+  // Empty means "could not be read", not "zero pages" — the caller passes the
+  // parsed boxes or nothing at all.
+  const oldPageCount = oldBoxes.length > 0 ? oldBoxes.length : null;
+
   for (const index of [...inkedIndexes].sort((a, b) => a - b)) {
+    if (oldPageCount !== null && index >= oldPageCount) {
+      // Not "orphaned": the strokes are real and the superseded copy keeps
+      // them. The likeliest benign cause is a page added on the device to a
+      // PDF that never had one — genuine ink with no counterpart in the
+      // source, and no page of the replacement it can be assumed to match.
+      outcomes.push({
+        index,
+        disposition: "skipped",
+        reason: `the superseded document has only ${oldPageCount} page${oldPageCount === 1 ? "" : "s"}, so page ${index + 1} has no source to match`,
+      });
+      continue;
+    }
     if (index >= newPageCount) {
       outcomes.push({
         index,
@@ -222,14 +254,61 @@ export async function measureSimilarity(
   return out;
 }
 
-/** Attach measured similarities to a plan's ported outcomes. */
-export function withSimilarity(plan: CarryPlan, measured: Map<number, number>): CarryPlan {
+/**
+ * Attach measured similarities to a plan's ported outcomes, and stamp the ones
+ * that could not be measured with why.
+ *
+ * The reason is what makes an absent similarity actionable: "layout not
+ * compared" leaves the reader guessing whether a renderer is missing, the
+ * superseded PDF could not be fetched, or that one page would not render.
+ */
+export function withSimilarity(
+  plan: CarryPlan,
+  measured: Map<number, number>,
+  unverifiedReason?: string,
+): CarryPlan {
   return {
     ...plan,
-    outcomes: plan.outcomes.map((o) =>
-      measured.has(o.index) ? { ...o, similarity: measured.get(o.index) } : o,
-    ),
+    outcomes: plan.outcomes.map((o) => {
+      if (measured.has(o.index)) return { ...o, similarity: measured.get(o.index) };
+      if (unverifiedReason && o.disposition === "ported") {
+        return { ...o, unverifiedReason };
+      }
+      return o;
+    }),
   };
+}
+
+/**
+ * Ported pages whose placement was never actually compared.
+ *
+ * These are ports the tool cannot corroborate: it wrote the strokes, and it
+ * has no evidence they landed on what they were drawn on. Absence of a
+ * measurement is not a passing measurement —
+ * specs/behaviors/ink-preservation.md#not-measured-must-never-look-like-measured-and-fine.
+ */
+export function unverifiedPorts(plan: CarryPlan): CarryOutcome[] {
+  return plan.outcomes.filter(
+    (o) => o.disposition === "ported" && o.similarity === undefined,
+  );
+}
+
+/**
+ * The safety invariant: **the superseded copy is trashed only on a complete,
+ * corroborated carry.**
+ *
+ * Two independent conditions, and both have to hold. Complete means every
+ * inked page ported. Corroborated means every ported page's placement was
+ * measured — a carry that skipped the measurement is exactly the case the
+ * measurement was introduced to catch, so it does not get to authorize the
+ * one destructive step in the operation.
+ *
+ * Note what this does *not* gate: writing the strokes. That half destroys
+ * nothing, and withholding it would lose ink over a limitation of the tool
+ * rather than a property of the document.
+ */
+export function safeToTrash(plan: CarryPlan): boolean {
+  return plan.complete && unverifiedPorts(plan).length === 0;
 }
 
 /** Below this, the page's content moved enough that the ink probably no longer
@@ -266,8 +345,16 @@ export function carryTable(plan: CarryPlan): Record<string, unknown>[] {
   });
 }
 
-/** Render the plan as the `kept_ink` block `put` reports, page numbers 1-based
- * because that is how a human counts pages. */
+/**
+ * Render the plan as the `kept_ink` block `put` reports, page numbers 1-based
+ * because that is how a human counts pages.
+ *
+ * `unverified` is the half of "not measured is not measured-and-fine" the
+ * table alone could not carry: a cell reading `—` is easy to slide past, and
+ * it has no room for *why* the comparison failed. Listing the page and its
+ * cause next to `ported` puts it where the reader is already looking, beside
+ * `orphaned` and `skipped`.
+ */
 export function summarizeCarry(plan: CarryPlan): Record<string, unknown> {
   const by = (d: Disposition) =>
     plan.outcomes.filter((o) => o.disposition === d).map((o) => o.index + 1);
@@ -278,10 +365,19 @@ export function summarizeCarry(plan: CarryPlan): Record<string, unknown> {
   const shifted = plan.outcomes.filter(
     (o) => o.disposition === "ported" && o.similarity !== undefined && o.similarity < SIMILARITY_WARN,
   );
+  const unverified = unverifiedPorts(plan);
 
   return {
     ported: ported.length,
     ...(ported.length > 0 ? { pages: ported.join(",") } : {}),
+    ...(unverified.length > 0
+      ? {
+          unverified: unverified.map(
+            (o) =>
+              `page ${o.index + 1} — layout not compared${o.unverifiedReason ? `: ${o.unverifiedReason}` : ""}; the superseded copy was kept so the placement can be checked`,
+          ),
+        }
+      : {}),
     ...(shifted.length > 0
       ? {
           layout_shifted: shifted.map(

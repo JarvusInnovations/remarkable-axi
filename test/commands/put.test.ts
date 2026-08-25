@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import type { RemarkableApi } from "rmapi-js";
 import { age } from "../../src/time.js";
+import { findGhostscript } from "../../src/gs.js";
 
 // `client()` is the only cloud entry point `put` uses directly — everything
 // else (`listEntries`, `buildTree`, ...) runs for real against the fake API
@@ -20,6 +21,11 @@ const { put } = await import("../../src/commands/put.js");
 // Every fixture document reports this as its cloud `lastModified`; computed
 // through the real `age()` helper rather than hardcoded, so the expected
 // `last_synced` text doesn't drift out of sync with the calendar.
+// Measuring a page similarity needs a real renderer, and CI has none. The
+// suites that turn on a *measured* outcome skip where it is absent; everything
+// else — including the whole unverified path — runs everywhere.
+const gs = await findGhostscript();
+
 const LAST_MODIFIED = "1700000000000";
 const lastSyncedAge = age(LAST_MODIFIED);
 
@@ -41,6 +47,19 @@ interface Item {
   contentUnreadable?: boolean;
   /** Makes `raw.getRm` throw for every one of this item's `.rm` entries. */
   rmUnreadable?: boolean;
+  /**
+   * Page count of the PDF `getPdf` serves for this item — the superseded
+   * document's *real* extent. Omitted means `getPdf` throws, which is the
+   * degrade path where nothing about the layout can be measured.
+   */
+  pdfPages?: number;
+  /**
+   * Length of the `.content` page list, when it disagrees with the document it
+   * describes. Defaults to `pageCount`. A list longer than the PDF is what put
+   * ink on "page 3" of a two-page document —
+   * https://github.com/JarvusInnovations/remarkable-axi/issues/55.
+   */
+  contentPages?: number;
 }
 
 /**
@@ -157,14 +176,23 @@ function fakeApi(items: Item[]) {
     },
     getContent: async ({ id }: { id: string }) => {
       const item = byId.get(id);
+      const listed = item?.contentPages ?? item?.pageCount ?? 1;
       return {
         fileType: "pdf",
         pageCount: item?.pageCount ?? 1,
-        pages: Array.from({ length: item?.pageCount ?? 1 }, (_, i) => `page-${i}`),
+        pages: Array.from({ length: listed }, (_, i) => `page-${i}`),
       } as unknown;
     },
-    getPdf: async () => {
-      throw new Error("no pdf");
+    getPdf: async ({ id }: { id: string }) => {
+      const item = byId.get(id);
+      if (!item?.pdfPages) throw new Error("no pdf");
+      const { PDFDocument } = await import("pdf-lib");
+      const doc = await PDFDocument.create();
+      for (let i = 0; i < item.pdfPages; i++) {
+        const page = doc.addPage([509, 679]);
+        page.drawRectangle({ x: 40, y: 80 * (i + 1), width: 300, height: 40 });
+      }
+      return doc.save();
     },
     updateDocument: async (ref: { id: string; hash: string }, content: unknown) => {
       calls.updateDocument++;
@@ -246,13 +274,101 @@ describe("put --replace ink guard", () => {
     async function realPdf(pages: number): Promise<string> {
       const { PDFDocument } = await import("pdf-lib");
       const doc = await PDFDocument.create();
-      for (let i = 0; i < pages; i++) doc.addPage([509, 679]);
+      // The same marks `getPdf` draws for the superseded copy, so a page that
+      // genuinely did not move measures as unmoved rather than as blank-vs-ink.
+      for (let i = 0; i < pages; i++) {
+        const page = doc.addPage([509, 679]);
+        page.drawRectangle({ x: 40, y: 80 * (i + 1), width: 300, height: 40 });
+      }
       const file = join(dir, `real-${pages}.pdf`);
       await writeFile(file, await doc.save());
       return file;
     }
 
-    test("carries strokes onto the replacement, then trashes the old copy", async () => {
+    // Trashing the superseded copy takes a *corroborated* carry, so these need
+    // a real renderer. Same skip pattern as test/lint/rules.test.ts.
+    describe.skipIf(gs === null)("a corroborated carry", () => {
+      test("carries strokes onto the replacement, then trashes the old copy", async () => {
+        const src = await realPdf(2);
+        const { api, calls } = fakeApi([
+          { id: "docA", name: "Flyer", parent: "", pageCount: 2, inkedPages: 2, pdfPages: 2 },
+        ]);
+        authMock.client.mockResolvedValue(api);
+
+        const out = (await put([src, "/Flyer", "--replace", "--keep-ink"])) as {
+          kept_ink: { ported: number; pages: string; unverified?: string[] };
+          ink: { similarity: string }[];
+          backup?: unknown;
+        };
+
+        expect(out.kept_ink).toEqual({ ported: 2, pages: "1,2" });
+        expect(out.kept_ink.unverified).toBeUndefined();
+        expect(out.ink.every((row) => row.similarity !== "—")).toBe(true);
+        // The replacement's real page list had to be declared before strokes
+        // could be addressed at all — a fresh upload declares only one page.
+        expect(calls.declaredPages).toBe(2);
+        expect(calls.wroteStrokes).toBe(2);
+        // Strokes were read before the upload, and the old copy trashed after.
+        expect(calls.getRmPages).toBe(1);
+        expect(calls.delete).toBe(1);
+        expect(out.backup).toBeDefined();
+      });
+
+      test("appending a page keeps the earlier pages' ink", async () => {
+        const src = await realPdf(3);
+        const { api, calls } = fakeApi([
+          { id: "docA", name: "Flyer", parent: "", pageCount: 2, inkedPages: 2, pdfPages: 2 },
+        ]);
+        authMock.client.mockResolvedValue(api);
+
+        const out = (await put([src, "/Flyer", "--replace", "--keep-ink"])) as {
+          kept_ink: { ported: number };
+        };
+        expect(out.kept_ink.ported).toBe(2);
+        expect(calls.declaredPages).toBe(3);
+        expect(calls.delete).toBe(1);
+      });
+    });
+
+    // The #55 regression, end to end: the `.content` page list runs one entry
+    // longer than the PDF it describes, so a page id resolves to an index the
+    // superseded document never had. Bounding against the new document alone
+    // could not see it — the replacement is long enough.
+    test("refuses a source index the superseded document does not have", async () => {
+      const src = await realPdf(3);
+      const { api, calls } = fakeApi([
+        {
+          id: "docA",
+          name: "Flyer",
+          parent: "",
+          pageCount: 2,
+          contentPages: 3,
+          inkedPages: 3,
+          pdfPages: 2,
+        },
+      ]);
+      authMock.client.mockResolvedValue(api);
+
+      const out = (await put([src, "/Flyer", "--replace", "--keep-ink"])) as {
+        kept_ink: { ported: number; pages?: string; skipped?: string[] };
+        warning: string;
+      };
+
+      expect(out.kept_ink.ported).toBe(2);
+      expect(out.kept_ink.pages).toBe("1,2");
+      expect(out.kept_ink.skipped).toHaveLength(1);
+      expect(out.kept_ink.skipped![0]).toContain("page 3");
+      expect(out.kept_ink.skipped![0]).toContain("only 2 pages");
+      // Two pages of strokes written, not three — the phantom index is not a
+      // page of anything.
+      expect(calls.wroteStrokes).toBe(2);
+      expect(calls.delete).toBe(0);
+      expect(out.warning).toContain("LEFT IN PLACE");
+    });
+
+    // The degrade path from #55: with no superseded PDF there is nothing to
+    // compare against, so the ports are real but uncorroborated.
+    test("ports unverified ink but keeps the superseded copy, saying why", async () => {
       const src = await realPdf(2);
       const { api, calls } = fakeApi([
         { id: "docA", name: "Flyer", parent: "", pageCount: 2, inkedPages: 2 },
@@ -260,34 +376,30 @@ describe("put --replace ink guard", () => {
       authMock.client.mockResolvedValue(api);
 
       const out = (await put([src, "/Flyer", "--replace", "--keep-ink"])) as {
-        kept_ink: { ported: number; pages: string };
-        backup?: unknown;
+        kept_ink: { ported: number; unverified: string[] };
+        ink: { similarity: string; note: string }[];
+        warning: string;
+        superseded: { id: string };
+        help: string[];
       };
 
-      expect(out.kept_ink).toEqual({ ported: 2, pages: "1,2" });
-      // The replacement's real page list had to be declared before strokes
-      // could be addressed at all — a fresh upload declares only one page.
-      expect(calls.declaredPages).toBe(2);
-      expect(calls.wroteStrokes).toBe(2);
-      // Strokes were read before the upload, and the old copy trashed after.
-      expect(calls.getRmPages).toBe(1);
-      expect(calls.delete).toBe(1);
-      expect(out.backup).toBeDefined();
-    });
-
-    test("appending a page keeps the earlier pages' ink", async () => {
-      const src = await realPdf(3);
-      const { api, calls } = fakeApi([
-        { id: "docA", name: "Flyer", parent: "", pageCount: 2, inkedPages: 2 },
-      ]);
-      authMock.client.mockResolvedValue(api);
-
-      const out = (await put([src, "/Flyer", "--replace", "--keep-ink"])) as {
-        kept_ink: { ported: number };
-      };
+      // The strokes still ride: writing them destroys nothing.
       expect(out.kept_ink.ported).toBe(2);
-      expect(calls.declaredPages).toBe(3);
-      expect(calls.delete).toBe(1);
+      expect(calls.wroteStrokes).toBe(2);
+      // But the carry is not corroborated, so the destructive half is withheld.
+      expect(calls.delete).toBe(0);
+      expect(calls.rename).toBe(0);
+      expect(out.superseded.id).toBe("docA");
+      expect(out.warning).toContain("LEFT IN PLACE");
+      expect(out.warning).toContain("could not be verified");
+      expect(out.kept_ink.unverified).toHaveLength(2);
+      expect(out.kept_ink.unverified[0]).toContain("PDF could not be fetched");
+      expect(out.ink[0]!.similarity).toBe("—");
+      expect(out.ink[0]!.note).toBe("layout not compared");
+      // Not an `rm <path>` suggestion: two documents answer to that path now,
+      // and rm resolves it first-writer-wins.
+      expect(out.help.join(" ")).toContain("share /Flyer");
+      expect(out.help.join(" ")).toContain("docA");
     });
 
     // The safety rule: a partial carry must not be the moment ink becomes
