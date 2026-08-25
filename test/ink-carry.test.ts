@@ -5,7 +5,9 @@ import {
   carryTable,
   measureSimilarity,
   planCarry,
+  safeToTrash,
   summarizeCarry,
+  unverifiedPorts,
   withSimilarity,
   compareDarkness,
   type PageBox,
@@ -48,10 +50,41 @@ describe("planCarry", () => {
     expect(plan.outcomes[0]!.reason).toContain("509x679 → 679x509");
   });
 
+  // https://github.com/JarvusInnovations/remarkable-axi/issues/55 — a page id
+  // resolved to index 2 on a two-page document and ported, because nothing
+  // bounded the source index against the source. The replacement being long
+  // enough is not the question: no page of it can correspond to a page the
+  // superseded document never had.
+  it("rejects a source index the superseded document does not have", () => {
+    const plan = planCarry([0, 2], 4, [A4, A4], [A4, A4, A4, A4]);
+    expect(plan.ported).toEqual([0]);
+    expect(plan.complete).toBe(false);
+    const phantom = plan.outcomes.find((o) => o.index === 2)!;
+    expect(phantom.disposition).toBe("skipped");
+    expect(phantom.reason).toContain("only 2 pages");
+    expect(phantom.reason).toContain("page 3");
+  });
+
+  // The source bound is checked first so the reason names the real problem —
+  // "the superseded document never had this page", not "the replacement is
+  // shorter", which would send the reader looking at the wrong document.
+  it("blames the source, not the replacement, when both are too short", () => {
+    const plan = planCarry([3], 2, [A4, A4], [A4, A4]);
+    expect(plan.outcomes[0]!.disposition).toBe("skipped");
+    expect(plan.outcomes[0]!.reason).toContain("superseded document");
+  });
+
   it("treats an unknown box as no evidence of a mismatch", () => {
     const plan = planCarry([0], 1, [], []);
     expect(plan.ported).toEqual([0]);
     expect(plan.complete).toBe(true);
+  });
+
+  // An unreadable superseded PDF leaves no boxes at all, and an absent bound
+  // must not be read as a bound of zero — that would reject every page.
+  it("does not bound the index when the superseded page count is unknown", () => {
+    const plan = planCarry([0, 5], 6, [], []);
+    expect(plan.ported).toEqual([0, 5]);
   });
 
   it("is not complete when there was no ink to carry", () => {
@@ -66,14 +99,77 @@ describe("planCarry", () => {
 
 describe("summarizeCarry", () => {
   it("reports 1-based page numbers", () => {
-    const summary = summarizeCarry(planCarry([0, 1], 3, [A4, A4], [A4, A4, A4]));
-    expect(summary).toEqual({ ported: 2, pages: "1,2" });
+    const plan = withSimilarity(
+      planCarry([0, 1], 3, [A4, A4], [A4, A4, A4]),
+      new Map([
+        [0, 0.99],
+        [1, 0.99],
+      ]),
+    );
+    expect(summarizeCarry(plan)).toEqual({ ported: 2, pages: "1,2" });
   });
 
   it("names what did not make it, and why", () => {
     const summary = summarizeCarry(planCarry([0, 2], 1, [A4, A4, A4], [A4]));
     expect(summary.ported).toBe(1);
     expect((summary.orphaned as string[])[0]).toContain("page 3");
+  });
+
+  // The half a `—` in the table cannot carry: which pages went unverified,
+  // and why the comparison could not be made.
+  it("lists an unverified port beside ported, with its cause", () => {
+    const plan = withSimilarity(
+      planCarry([0, 1], 2, [A4, A4], [A4, A4]),
+      new Map([[0, 0.99]]),
+      "no PDF renderer found",
+    );
+    const summary = summarizeCarry(plan);
+    expect(summary.ported).toBe(2);
+    expect(summary.unverified).toEqual([
+      "page 2 — layout not compared: no PDF renderer found; the superseded copy was kept so the placement can be checked",
+    ]);
+  });
+
+  it("says nothing about unverified pages when every port was measured", () => {
+    const plan = withSimilarity(
+      planCarry([0], 1, [A4], [A4]),
+      new Map([[0, 0.99]]),
+    );
+    expect(summarizeCarry(plan).unverified).toBeUndefined();
+  });
+});
+
+// The safety invariant, isolated: the superseded copy is trashed only on a
+// complete AND corroborated carry. Before #55 only the first half was tested,
+// because only the first half existed.
+describe("safeToTrash", () => {
+  const measured = (indexes: number[], value = 0.99) =>
+    new Map(indexes.map((i) => [i, value] as const));
+
+  it("permits the trash when every page ported and every port was measured", () => {
+    const plan = withSimilarity(planCarry([0, 1], 2, [A4, A4], [A4, A4]), measured([0, 1]));
+    expect(safeToTrash(plan)).toBe(true);
+  });
+
+  // The #55 decision bug in one assertion: the table said "layout not
+  // compared" while the decision behaved as though it had compared.
+  it("withholds the trash when a page ported without being measured", () => {
+    const plan = withSimilarity(planCarry([0, 1], 2, [A4, A4], [A4, A4]), measured([0]));
+    expect(plan.complete).toBe(true);
+    expect(safeToTrash(plan)).toBe(false);
+    expect(unverifiedPorts(plan).map((o) => o.index)).toEqual([1]);
+  });
+
+  // Low is not the same as absent: a measured shift is a warning the user can
+  // judge against a findable backup, which is the pre-existing rule.
+  it("permits the trash on a measured page that scored low", () => {
+    const plan = withSimilarity(planCarry([0], 1, [A4], [A4]), measured([0], 0.42));
+    expect(safeToTrash(plan)).toBe(true);
+  });
+
+  it("withholds the trash on a partial carry, measured or not", () => {
+    const plan = withSimilarity(planCarry([0, 3], 2, [A4, A4, A4, A4], [A4, A4]), measured([0]));
+    expect(safeToTrash(plan)).toBe(false);
   });
 });
 

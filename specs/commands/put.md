@@ -15,12 +15,7 @@ Send something to the tablet. `<src>` is a local file or a URL; `<dest>` is a pa
 | `--name <name>` | document name shown on the device (default: derived from source) |
 | `--replace` | swap the contents of the document already at `<dest>` |
 | `--discard-ink` | with `--replace`, proceed when the target carries ink |
-| `--keep-ink` | with `--replace`, carry the target's strokes onto the replacement |
-
-`--keep-ink` — carrying the superseded document's ink onto the replacement — is
-designed but **not implemented**; see
-[ink-preservation](../behaviors/ink-preservation.md#carrying-ink-forward-not-yet-shipped)
-for why and what was tried.
+| `--keep-ink` | with `--replace`, carry the target's strokes onto the replacement (the old copy stays put unless every ported page's layout was compared and matched) |
 | `--device-page` | override an HTML source's declared `@page` with the device page box |
 | `--strict` | treat `check`-level error findings as fatal instead of warnings |
 
@@ -155,9 +150,12 @@ uploaded:
 help[1]: Run `remarkable-axi ls /Papers` to confirm it landed
 ```
 
-Replacing adds the backup — see
-[ink-preservation](../behaviors/ink-preservation.md) for the per-page ink table
-`--keep-ink` would add once it ships.
+Replacing adds the backup, and `--keep-ink` adds the per-page ink table and the
+`kept_ink` summary — see
+[ink-preservation](../behaviors/ink-preservation.md#carrying-ink-forward). A carry
+that was incomplete, or that ported a page without its layout being compared,
+replaces the backup with a `warning` plus the `superseded` document's name and id:
+the old copy was left in place rather than trashed, so the two can be compared.
 
 ## Failure
 

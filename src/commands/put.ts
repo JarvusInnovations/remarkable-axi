@@ -15,10 +15,13 @@ import {
   measureSimilarity,
   pageBoxes,
   planCarry,
+  safeToTrash,
   summarizeCarry,
+  unverifiedPorts,
   withSimilarity,
   type CarryPlan,
 } from "../ink-carry.js";
+import { findGhostscript } from "../gs.js";
 import { bool, parseFlags, requirePositional, str } from "../flags.js";
 import {
   buildTree,
@@ -395,15 +398,36 @@ async function carryInk(
       ref: newRef,
     };
   }
+  // Empty when the superseded PDF could not be read; `planCarry` then has no
+  // source page count to bound against and no boxes to compare, and every
+  // port it produces comes back unverified below.
   const oldBoxes = (oldBytes ? await pageBoxes(oldBytes) : null) ?? [];
   let plan = planCarry(inkedIndexes, newBoxes.length, oldBoxes, newBoxes);
   if (plan.ported.length === 0) return { plan, ref: newRef };
 
   // Measure whether the content moved under the ink. Index matching cannot
   // see a page inserted mid-document; a rendered comparison can, and the
-  // spec requires it be measured rather than inferred.
-  if (oldBytes) {
-    plan = withSimilarity(plan, await measureSimilarity(oldBytes, newBytes, plan.ported));
+  // spec requires it be measured rather than inferred. Where it cannot be
+  // made, the reason rides along with the absence — the caller reports it and
+  // withholds the trash, per
+  // specs/behaviors/ink-preservation.md#not-measured-must-never-look-like-measured-and-fine.
+  if (!oldBytes) {
+    plan = withSimilarity(
+      plan,
+      new Map(),
+      "the superseded document's PDF could not be fetched",
+    );
+  } else {
+    const measured = await measureSimilarity(oldBytes, newBytes, plan.ported);
+    plan = withSimilarity(
+      plan,
+      measured,
+      measured.size === plan.ported.length
+        ? undefined
+        : (await findGhostscript())
+          ? "the page could not be rendered from both documents"
+          : "no PDF renderer found — install Ghostscript (https://www.ghostscript.com/)",
+    );
   }
 
   // Declare the replacement's real page list. Fresh ids rather than the
@@ -559,7 +583,12 @@ export async function put(args: string[]): Promise<Output> {
       carryPlan = result.plan;
     }
 
-    const holdBack = carryPlan !== null && !carryPlan.complete;
+    // The superseded copy is trashed only on a complete, corroborated carry —
+    // a port whose placement was never measured does not authorize it. Holding
+    // back leaves the two documents side by side, which is the condition under
+    // which a human can actually check the carry.
+    const unverified = carryPlan ? unverifiedPorts(carryPlan) : [];
+    const holdBack = carryPlan !== null && !safeToTrash(carryPlan);
     const trash = holdBack ? ({ ok: false } as const) : await trashSuperseded(api, old);
 
     return {
@@ -581,13 +610,22 @@ export async function put(args: string[]): Promise<Output> {
         ? { backup: { trashed: trash.name, id: old.entry.id.slice(0, 8) } }
         : holdBack
           ? {
-              warning:
-                "some strokes could not be carried — the superseded document was LEFT IN PLACE, not trashed, so nothing is lost",
+              warning: carryPlan!.complete
+                ? "every stroke was carried but its placement could not be verified — the superseded document was LEFT IN PLACE, not trashed, so the two can be compared"
+                : "some strokes could not be carried — the superseded document was LEFT IN PLACE, not trashed, so nothing is lost",
               superseded: { name: old.entry.visibleName, id: old.entry.id.slice(0, 8) },
             }
           : { warning: "the superseded document could not be moved to trash" }),
       help: [
         `Run \`remarkable-axi ls ${parentPathOf(destPath)}\` to confirm it landed`,
+        // Deliberately not `rm ${destPath}`: two documents now answer to that
+        // path, and `rm` resolves it first-writer-wins, so the suggestion
+        // could trash the replacement instead. The id says which one is which.
+        ...(holdBack && unverified.length > 0
+          ? [
+              `Two documents now share ${destPath} — compare them on the tablet, then trash the superseded copy (${old.entry.id.slice(0, 8)})`,
+            ]
+          : []),
       ],
     };
   }
